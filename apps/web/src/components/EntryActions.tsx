@@ -74,11 +74,13 @@ export function EntryActionsProvider({ kind, canWrite, methods, children }: Prop
   // `mutateAsync` (e não callbacks do `mutate`): os callbacks por chamada só disparam
   // para a última chamada do observer, e duas linhas pagas em sequência perderiam o erro.
   function saveEdit(entry: EntryDTO, patch: EntryPatch, scope?: EditScope) {
+    if (!canWrite) return;
     setError(null);
     update.mutateAsync({ id: entry.id, scope, patch }).catch(fail);
   }
 
   function deleteNow(entry: EntryDTO, scope: DeleteScope) {
+    if (!canWrite) return;
     setDeleting(null);
     setError(null);
     del.mutateAsync({ id: entry.id, scope }).catch(fail);
@@ -131,8 +133,10 @@ export function EntryActionsProvider({ kind, canWrite, methods, children }: Prop
           title="Aplicar alteração"
           message={`“${editing.entry.displayName}” faz parte de uma série.`}
           options={EDIT_OPTIONS}
+          disabled={!canWrite}
           onCancel={() => setEditing(null)}
           onChoose={(scope) => {
+            if (!canWrite) return;
             saveEdit(editing.entry, editing.patch, scope);
             setEditing(null);
           }}
@@ -144,12 +148,13 @@ export function EntryActionsProvider({ kind, canWrite, methods, children }: Prop
           title="Excluir lançamento"
           message="Lançamentos já pagos são preservados em “Esta e as próximas” e “Série inteira”."
           options={DELETE_OPTIONS}
+          disabled={!canWrite}
           onCancel={() => setDeleting(null)}
-          onChoose={(scope) =>
-            scope === 'this' && deleting.entry.paidOn
-              ? setDeleting({ entry: deleting.entry, step: 'confirm-paid' })
-              : deleteNow(deleting.entry, scope)
-          }
+          onChoose={(scope) => {
+            if (!canWrite) return;
+            if (scope === 'this' && deleting.entry.paidOn) setDeleting({ entry: deleting.entry, step: 'confirm-paid' });
+            else deleteNow(deleting.entry, scope);
+          }}
         />
       )}
       {(deleting?.step === 'confirm' || deleting?.step === 'confirm-paid') && (
@@ -161,6 +166,7 @@ export function EntryActionsProvider({ kind, canWrite, methods, children }: Prop
               : `Excluir “${deleting.entry.displayName}”?`
           }
           options={CONFIRM_DELETE}
+          disabled={!canWrite}
           onCancel={() => setDeleting(null)}
           onChoose={() => deleteNow(deleting.entry, 'this')}
         />
@@ -172,6 +178,7 @@ export function EntryActionsProvider({ kind, canWrite, methods, children }: Prop
           canWrite={canWrite}
           onCancel={() => setEnding(null)}
           onConfirm={(lastMonth) => {
+            if (!canWrite) return;
             setEnding(null);
             setError(null);
             end.mutateAsync({ seriesId: ending.seriesId!, lastMonth }).catch(fail);

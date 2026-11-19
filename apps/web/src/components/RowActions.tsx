@@ -1,4 +1,5 @@
 import type { EntryDTO } from '@pluton/shared';
+import { copyablePixKey } from '../lib/entryDraft';
 import { useEntryActions } from './EntryActions';
 import { PixCopyButton } from './PixCopyButton';
 
@@ -22,11 +23,12 @@ function TrashIcon() {
 
 /** Ações de uma linha da tabela: copiar chave Pix, editar, encerrar série, excluir. */
 export function RowActions({ entry }: { entry: EntryDTO }) {
-  const { canWrite, openEditor, endSeries, remove } = useEntryActions();
+  const { canWrite, methods, openEditor, endSeries, remove } = useEntryActions();
+  const pixKey = copyablePixKey(entry, methods);
   const name = entry.displayName;
   return (
     <span className="flex items-center justify-end gap-0.5">
-      {entry.pixKey && <PixCopyButton pixKey={entry.pixKey} />}
+      {pixKey && <PixCopyButton pixKey={pixKey} />}
       <button
         type="button"
         aria-label={`Editar: ${name}`}

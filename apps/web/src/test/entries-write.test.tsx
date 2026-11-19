@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { EntryDTO, PaymentMethodDTO } from '@pluton/shared';
@@ -151,6 +151,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // O evento `offline` também desliga o onlineManager global do TanStack Query.
+  onlineManager.setOnline(true);
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -431,6 +433,194 @@ describe('EntriesPage (escrita)', () => {
 
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]).toEqual({ method: 'PATCH', path: '/api/entries/e1', body: { amountCents: 160000 } });
+  });
+});
+
+describe('EntriesPage (escrita) — segurança dos dados', () => {
+  function goOffline() {
+    online = false;
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+  }
+
+  test('ficar offline com o ScopeDialog de edição aberto desabilita as opções e não envia nada', async () => {
+    entries = [installment()];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar valor: Fone 3/7' }));
+    const input = screen.getByRole('textbox', { name: 'Valor: Fone 3/7' });
+    fireEvent.change(input, { target: { value: '50,00' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    const dialog = await screen.findByRole('dialog');
+
+    goOffline();
+
+    for (const name of ['Só esta', 'Esta e as próximas']) {
+      const option = within(dialog).getByRole('button', { name });
+      expect(option).toBeDisabled();
+      fireEvent.click(option);
+    }
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeEnabled();
+    expect(calls).toHaveLength(0);
+  });
+
+  test('ficar offline com a exclusão aberta (série e confirmação de pago) não envia DELETE', async () => {
+    entries = [
+      installment(),
+      entry({ id: 'paid1', displayName: 'Luz', amountCents: 15000, dueDate: '2026-12-05', paidOn: '2026-11-28' }),
+    ];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Excluir: Fone 3/7' }));
+    let dialog = await screen.findByRole('dialog');
+    goOffline();
+    for (const name of ['Só esta', 'Esta e as próximas', 'Série inteira']) {
+      expect(within(dialog).getByRole('button', { name })).toBeDisabled();
+      fireEvent.click(within(dialog).getByRole('button', { name }));
+    }
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+
+    online = true;
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir: Luz' }));
+    dialog = await screen.findByRole('dialog');
+    goOffline();
+    expect(within(dialog).getByRole('button', { name: 'Excluir' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Excluir' }));
+    expect(calls).toHaveLength(0);
+  });
+
+  test('dois Enter seguidos na nova linha fazem um único POST', async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Método' })).toHaveValue('m-pix'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nome' }), { target: { value: 'Fone 1/7' } });
+    const amount = screen.getByRole('textbox', { name: 'Valor' });
+    fireEvent.change(amount, { target: { value: '42,90' } });
+    fireEvent.keyDown(amount, { key: 'Enter' });
+    fireEvent.keyDown(amount, { key: 'Enter' });
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+  });
+
+  test('dois envios seguidos do formulário no celular fazem um único POST', async () => {
+    setViewport(false);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Novo lançamento' });
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Fone 1/7' } });
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Valor' }), { target: { value: '42,90' } });
+    const save = within(sheet).getByRole('button', { name: 'Salvar' });
+    fireEvent.click(save);
+    fireEvent.click(save);
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toHaveLength(1);
+  });
+
+  test('trocar o método de Pix para outro na célula limpa a chave Pix (pixKey: null)', async () => {
+    entries = [
+      entry({ id: 'e1', displayName: 'Diarista', amountCents: 20000, dueDate: '2026-12-05', paymentMethodId: 'm-pix', pixKey: 'chave@exemplo.com' }),
+    ];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar método: Diarista' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Método: Diarista' }), { target: { value: 'm-card' } });
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({
+      method: 'PATCH',
+      path: '/api/entries/e1',
+      body: { paymentMethodId: 'm-card', pixKey: null },
+    });
+  });
+
+  test('trocar o método de Pix para outro no formulário limpa a chave Pix', async () => {
+    entries = [
+      entry({ id: 'e1', displayName: 'Diarista', amountCents: 20000, dueDate: '2026-12-05', paymentMethodId: 'm-pix', pixKey: 'chave@exemplo.com' }),
+    ];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar: Diarista' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    fireEvent.change(within(sheet).getByRole('combobox', { name: 'Método' }), { target: { value: 'm-card' } });
+    expect(within(sheet).queryByRole('textbox', { name: 'Chave Pix' })).not.toBeInTheDocument();
+    fireEvent.change(within(sheet).getByRole('combobox', { name: 'Método' }), { target: { value: 'm-pix' } });
+    expect(within(sheet).getByRole('textbox', { name: 'Chave Pix' })).toHaveValue('');
+    fireEvent.change(within(sheet).getByRole('combobox', { name: 'Método' }), { target: { value: 'm-card' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toEqual({ paymentMethodId: 'm-card', pixKey: null });
+  });
+
+  test('Copiar chave só aparece quando o método é Pix', async () => {
+    entries = [
+      entry({ id: 'e1', displayName: 'Cartão', amountCents: 20000, dueDate: '2026-12-05', paymentMethodId: 'm-card', pixKey: 'antiga@exemplo.com' }),
+      entry({ id: 'e2', displayName: 'Sem método', amountCents: 100, dueDate: '2026-12-06', pixKey: 'x@exemplo.com' }),
+    ];
+    renderPage();
+
+    await screen.findByText('Cartão');
+    expect(screen.queryByRole('button', { name: 'Copiar chave' })).not.toBeInTheDocument();
+  });
+
+  test('valor da nova linha ganha máscara BRL ao sair do campo', async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Método' })).toHaveValue('m-pix'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nome' }), { target: { value: 'Aluguel' } });
+    const amount = screen.getByRole('textbox', { name: 'Valor' });
+    fireEvent.change(amount, { target: { value: '1500' } });
+    fireEvent.blur(amount);
+    expect((amount as HTMLInputElement).value.replace(/\u00A0/g, ' ')).toBe('R$ 1.500,00');
+
+    fireEvent.change(amount, { target: { value: 'abc' } });
+    fireEvent.blur(amount);
+    expect(amount).toHaveValue('abc');
+
+    fireEvent.change(amount, { target: { value: '7' } });
+    fireEvent.blur(amount);
+    fireEvent.keyDown(amount, { key: 'Enter' });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ amountCents: 700 });
+  });
+
+  test('nova linha aceita "Sem método" (não volta para Pix)', async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Método' })).toHaveValue('m-pix'));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Método' }), { target: { value: '' } });
+    expect(screen.getByRole('combobox', { name: 'Método' })).toHaveValue('');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nome' }), { target: { value: 'Feira' } });
+    const amount = screen.getByRole('textbox', { name: 'Valor' });
+    fireEvent.change(amount, { target: { value: '30' } });
+    fireEvent.keyDown(amount, { key: 'Enter' });
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ name: 'Feira', paymentMethodId: null });
+  });
+
+  test('valor do formulário no celular ganha máscara BRL ao sair do campo', async () => {
+    setViewport(false);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Novo lançamento' });
+    const amount = within(sheet).getByRole('textbox', { name: 'Valor' });
+    fireEvent.change(amount, { target: { value: '42,9' } });
+    fireEvent.blur(amount);
+    expect((amount as HTMLInputElement).value.replace(/\u00A0/g, ' ')).toBe('R$ 42,90');
   });
 });
 

@@ -1,6 +1,15 @@
 import type { EntryKind, IsoDate, PaymentMethodDTO } from '@pluton/shared';
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { draftToCreate, emptyDraft, installmentHint, isPix, sortedMethods, type EntryDraft } from '../lib/entryDraft';
+import {
+  draftToCreate,
+  emptyDraft,
+  installmentHint,
+  isPix,
+  maskAmount,
+  sortedMethods,
+  withMethod,
+  type EntryDraft,
+} from '../lib/entryDraft';
 import { useCreateEntry } from '../lib/entryMutations';
 import { friendlyError } from '../lib/errors';
 import { EntrySheet } from './EntrySheet';
@@ -30,15 +39,18 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<EntryDraft>(() => emptyDraft(defaultDate, ''));
   const [error, setError] = useState<string | null>(null);
+  /** O usuário escolheu um método (inclusive "Sem método"); antes disso vale o padrão. */
+  const [methodChosen, setMethodChosen] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   // Métodos podem chegar depois de abrir a linha: vazio = primeiro método (Pix).
-  const current: EntryDraft = { ...draft, methodId: draft.methodId || defaultMethod };
+  const current: EntryDraft = methodChosen ? draft : { ...draft, methodId: draft.methodId || defaultMethod };
   const hint = installmentHint(current.name);
   const set = <K extends keyof EntryDraft>(key: K, value: EntryDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   function openRow() {
     setDraft(emptyDraft(defaultDate, defaultMethod));
+    setMethodChosen(false);
     setError(null);
     setOpen(true);
   }
@@ -48,12 +60,25 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
     setError(null);
   }
 
-  function save(source: EntryDraft, onSaved: () => void) {
-    if (!canWrite || create.isPending) return;
+  // Trava síncrona (o `isPending` só muda no próximo render): dois Enter seguidos
+  // não podem gerar dois POSTs — um `x/y` duplicado criaria outra série de parcelas.
+  const inFlight = useRef(false);
+
+  function save(source: EntryDraft, onSaved: () => void): Promise<void> | undefined {
+    if (!canWrite || inFlight.current) return;
     const result = draftToCreate(kind, source, byId);
-    if (!result.ok) return setError(result.error);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
     setError(null);
-    create.mutate(result.value, { onSuccess: onSaved, onError: (e) => setError(friendlyError(e)) });
+    inFlight.current = true;
+    return create
+      .mutateAsync(result.value)
+      .then(onSaved, (e: unknown) => setError(friendlyError(e)))
+      .finally(() => {
+        inFlight.current = false;
+      });
   }
 
   if (variant === 'floating') {
@@ -99,6 +124,7 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
     save(current, () => {
       // Nova linha vazia, pronta para o próximo lançamento.
       setDraft(emptyDraft(defaultDate, defaultMethod));
+      setMethodChosen(false);
       nameRef.current?.focus();
     });
   }
@@ -152,6 +178,7 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
             disabled={disabled}
             value={current.amount}
             onChange={(e) => set('amount', e.target.value)}
+            onBlur={() => set('amount', maskAmount(current.amount))}
           />
         </td>
         <td className="px-2 py-1.5">
@@ -160,7 +187,10 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
             className={cellInput}
             disabled={disabled}
             value={current.methodId}
-            onChange={(e) => set('methodId', e.target.value)}
+            onChange={(e) => {
+              setMethodChosen(true);
+              setDraft((d) => withMethod(d, e.target.value, byId));
+            }}
           >
             <option value="">Sem método</option>
             {list.map((m) => (

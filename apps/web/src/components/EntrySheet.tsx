@@ -1,6 +1,6 @@
 import type { PaymentMethodDTO } from '@pluton/shared';
-import { useMemo, useState, type FormEvent } from 'react';
-import { installmentHint, isPix, sortedMethods, type EntryDraft } from '../lib/entryDraft';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { installmentHint, isPix, maskAmount, sortedMethods, withMethod, type EntryDraft } from '../lib/entryDraft';
 import { Modal } from './Modal';
 
 interface Props {
@@ -10,7 +10,8 @@ interface Props {
   canWrite: boolean;
   saving?: boolean;
   error?: string | null;
-  onSubmit: (draft: EntryDraft) => void;
+  /** Pode devolver a promessa do salvamento: até ela terminar, novos envios são ignorados. */
+  onSubmit: (draft: EntryDraft) => void | Promise<unknown>;
   onCancel: () => void;
   /** Só na edição: ações extras do lançamento. */
   onDelete?: () => void;
@@ -39,9 +40,17 @@ export function EntrySheet({
   const hint = installmentHint(draft.name);
   const set = <K extends keyof EntryDraft>(key: K, value: EntryDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
+  // Trava síncrona: dois toques seguidos em Salvar não podem gerar dois POSTs
+  // (um `x/y` duplicado criaria outra série de parcelas).
+  const busy = useRef(false);
+
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (canWrite && !saving) onSubmit(draft);
+    if (!canWrite || busy.current) return;
+    busy.current = true;
+    Promise.resolve(onSubmit(draft)).finally(() => {
+      busy.current = false;
+    });
   }
 
   return (
@@ -63,6 +72,7 @@ export function EntrySheet({
               placeholder="0,00"
               value={draft.amount}
               onChange={(e) => set('amount', e.target.value)}
+              onBlur={() => set('amount', maskAmount(draft.amount))}
             />
           </label>
           <label className={labelCls}>
@@ -72,7 +82,7 @@ export function EntrySheet({
         </div>
         <label className={labelCls}>
           Método
-          <select className={field} value={draft.methodId} onChange={(e) => set('methodId', e.target.value)}>
+          <select className={field} value={draft.methodId} onChange={(e) => setDraft((d) => withMethod(d, e.target.value, byId))}>
             <option value="">Sem método</option>
             {list.map((m) => (
               <option key={m.id} value={m.id}>

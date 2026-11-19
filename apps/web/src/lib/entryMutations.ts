@@ -19,7 +19,8 @@ export interface EntryPatch {
   amountCents?: number;
   dueDate?: IsoDate;
   paymentMethodId?: string | null;
-  pixKey?: string;
+  /** `null` (ou "") limpa a chave. */
+  pixKey?: string | null;
 }
 
 /** Depois de qualquer escrita: listas, atrasados, mês padrão e resumo (prefixo). */

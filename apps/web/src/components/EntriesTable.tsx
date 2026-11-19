@@ -1,7 +1,7 @@
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { formatBRL, formatDatePtBR, type EntryDTO } from '@pluton/shared';
 import { useMemo, type ReactNode } from 'react';
-import { centsToInput, isValidDueDate, parseAmount, sortedMethods } from '../lib/entryDraft';
+import { centsToInput, isValidDueDate, methodPatch, parseAmount, sortedMethods } from '../lib/entryDraft';
 import { EditableCell } from './EditableCell';
 import { useEntryActions } from './EntryActions';
 import { KindIcon } from './KindIcon';
@@ -89,7 +89,7 @@ function MethodCell({ entry }: { entry: EntryDTO }) {
       display={<MethodTag method={id ? methods.get(id) : undefined} />}
       initial={id ?? ''}
       disabled={!canWrite}
-      onCommit={(v) => edit(entry, { paymentMethodId: v || null })}
+      onCommit={(v) => edit(entry, methodPatch(entry, v || null, methods))}
     />
   );
 }

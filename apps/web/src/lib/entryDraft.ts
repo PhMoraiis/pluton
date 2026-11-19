@@ -1,4 +1,5 @@
 import {
+  formatBRL,
   parseBRL,
   parseInstallmentName,
   type EntryDTO,
@@ -40,6 +41,12 @@ export function parseAmount(input: string): number | null {
   return cents !== null && cents > 0 ? cents : null;
 }
 
+/** Máscara BRL ao sair do campo: valor válido vira "R$ 1.500,00"; inválido fica como está. */
+export function maskAmount(input: string): string {
+  const cents = parseAmount(input);
+  return cents === null ? input : formatBRL(cents);
+}
+
 /** `Cria parcelas x a y, uma por mês` quando o nome termina em `x/y`. */
 export function installmentHint(name: string): string | null {
   const parsed = parseInstallmentName(name);
@@ -52,6 +59,25 @@ export function sortedMethods(methods: PaymentMethodDTO[]): PaymentMethodDTO[] {
 
 export function isPix(methods: Map<string, PaymentMethodDTO>, id: string | null | undefined): boolean {
   return id != null && methods.get(id)?.name === 'Pix';
+}
+
+/** Troca o método; saindo de Pix, a chave é descartada (ela só existe com Pix). */
+export function withMethod(draft: EntryDraft, methodId: string, methods: Map<string, PaymentMethodDTO>): EntryDraft {
+  return { ...draft, methodId, pixKey: isPix(methods, methodId) ? draft.pixKey : '' };
+}
+
+/** Patch de troca de método: saindo de Pix com chave gravada, limpa a chave. */
+export function methodPatch(
+  entry: EntryDTO,
+  methodId: string | null,
+  methods: Map<string, PaymentMethodDTO>,
+): EntryPatch {
+  return entry.pixKey && !isPix(methods, methodId) ? { paymentMethodId: methodId, pixKey: null } : { paymentMethodId: methodId };
+}
+
+/** `Copiar chave` só faz sentido com método Pix e chave preenchida. */
+export function copyablePixKey(entry: EntryDTO, methods: Map<string, PaymentMethodDTO>): string | null {
+  return entry.pixKey && isPix(methods, entry.paymentMethodId) ? entry.pixKey : null;
 }
 
 export function emptyDraft(dueDate: IsoDate, methodId: string): EntryDraft {
@@ -115,6 +141,10 @@ export function draftToPatch(
   const methodId = draft.methodId || null;
   if (methodId !== entry.paymentMethodId) patch.paymentMethodId = methodId;
   const pixKey = draft.pixKey.trim();
-  if (isPix(methods, methodId) && pixKey !== (entry.pixKey ?? '')) patch.pixKey = pixKey;
+  if (isPix(methods, methodId)) {
+    if (pixKey !== (entry.pixKey ?? '')) patch.pixKey = pixKey;
+  } else if (entry.pixKey) {
+    patch.pixKey = null;
+  }
   return { ok: true, value: patch };
 }
