@@ -26,6 +26,9 @@ function entry(over: Partial<EntryDTO> & Pick<EntryDTO, 'id' | 'displayName' | '
     seriesType: null,
     sequence: null,
     totalInstallments: null,
+    tagIds: [],
+    seriesRole: null,
+    amountAdjusted: false,
     ...over,
   };
 }

@@ -25,6 +25,7 @@ model User {
   paymentMethods PaymentMethod[]
   series         Series[]
   entries        Entry[]
+  tags           Tag[]
 
   @@unique([email])
   @@map("user")
@@ -92,6 +93,15 @@ enum SeriesType {
   MONTHLY
 }
 
+enum SeriesRole {
+  NONE
+  SALARY
+}
+
+enum TagSystem {
+  SUBSCRIPTION
+}
+
 model PaymentMethod {
   id        String   @id @default(cuid())
   userId    String
@@ -116,12 +126,14 @@ model Series {
   amountCents       Int
   paymentMethodId   String?
   pixKey            String?
+  role              SeriesRole     @default(NONE)
   endedOn           DateTime?      @db.Date
   generatedThrough  DateTime?      @db.Date
   createdAt         DateTime       @default(now())
   user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   paymentMethod     PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
   entries           Entry[]
+  tags              SeriesTag[]
 }
 
 model Entry {
@@ -136,6 +148,7 @@ model Entry {
   pixKey          String?
   note            String         @default("")
   paidOn          DateTime?      @db.Date
+  amountAdjusted  Boolean        @default(false)
   seriesId        String?
   sequence        Int?
   createdAt       DateTime       @default(now())
@@ -143,7 +156,43 @@ model Entry {
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
   series          Series?        @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  tags            EntryTag[]
 
   @@unique([seriesId, sequence])
   @@index([userId, kind, dueDate])
+}
+
+model Tag {
+  id        String      @id @default(cuid())
+  userId    String
+  name      String
+  color     String
+  sortOrder Int
+  system    TagSystem?
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries   EntryTag[]
+  series    SeriesTag[]
+
+  @@unique([userId, name])
+  @@unique([userId, system])
+}
+
+model EntryTag {
+  entryId String
+  tagId   String
+  entry   Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, tagId])
+  @@index([tagId])
+}
+
+model SeriesTag {
+  seriesId String
+  tagId    String
+  series   Series @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([seriesId, tagId])
+  @@index([tagId])
 }
