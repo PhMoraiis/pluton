@@ -31,7 +31,7 @@ export function LoginPage() {
 
   let content: ReactNode;
   if (status.data) {
-    content = status.data.hasUser ? <SignInForm /> : <SignUpForm />;
+    content = status.data.hasUser === false ? <SignUpForm /> : <SignInForm />;
   } else if (status.isError) {
     content = (
       <div className="flex flex-col gap-3 text-sm">

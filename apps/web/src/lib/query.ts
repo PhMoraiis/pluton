@@ -21,7 +21,10 @@ export const queryClient = new QueryClient({
       // Erros 4xx (incluindo 401) não melhoram com nova tentativa.
       retry: (failureCount, error) => !(hasStatus(error) && error.status < 500) && failureCount < 2,
     },
-    mutations: { networkMode: 'online' },
+    // Offline = somente leitura, nada é enfileirado: com 'online' o TanStack Query
+    // pausaria a mutação e a reenviaria ao reconectar. 'always' executa na hora,
+    // e sem conexão o fetch falha imediatamente.
+    mutations: { networkMode: 'always' },
   },
 });
 
@@ -35,6 +38,8 @@ export const persistOptions: PersistQueryClientProviderProps['persistOptions'] =
   persister,
   maxAge: THIRTY_DAYS_MS,
   buster: 'v1',
+  // Só queries vão para o armazenamento; mutações (mesmo pausadas) nunca são persistidas.
+  dehydrateOptions: { shouldDehydrateMutation: () => false },
 };
 
 /** Ao sair: apaga o cache em memória e o persistido (dados pessoais no aparelho). */
