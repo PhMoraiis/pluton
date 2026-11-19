@@ -9,8 +9,8 @@ Deploy: [docs/deploy.md](docs/deploy.md)
 
 - Monorepo pnpm (`apps/*`, `packages/*`), Node 24 LTS, TypeScript estrito
 - `packages/shared` (`@pluton/shared`): tipos e utilitários de dinheiro, consumido como fonte TS
-- `apps/api` (planejado): API com Postgres, Prisma Migrate e Better Auth
-- `apps/web` (planejado): PWA, offline somente leitura
+- `apps/api` (`@pluton/api`): API Hono com Postgres, Prisma Migrate e Better Auth (rotas em `/api`)
+- `apps/web` (`@pluton/web`): PWA React + Vite + TanStack Query + Tailwind, offline somente leitura
 - Testes com Vitest
 
 ## Desenvolvimento
@@ -21,7 +21,15 @@ pnpm install
 cp .env.example .env   # preencha os valores localmente; nunca versione o .env
 ```
 
-Layout planejado (chega nas próximas tarefas): `docker compose up -d` para o Postgres local, e as apps `api` e `web` em modo dev.
+```bash
+docker compose -f docker-compose.dev.yml up -d --wait   # Postgres local (porta 5433)
+pnpm --filter @pluton/api migrate:deploy                # aplica as migrações
+pnpm dev                                                # api (:3000) + web (:5173) juntos
+```
+
+Abra `http://localhost:5173`. O Vite faz proxy de `/api` para a API, então o app roda na mesma origem; em dev, `BETTER_AUTH_URL` precisa ser `http://localhost:5173` (a origem do navegador), senão o Better Auth recusa o login com `INVALID_ORIGIN`. Em produção é a URL pública do app.
+
+Build do PWA: `pnpm --filter @pluton/web build` (saída em `apps/web/dist`). Ícones: `pnpm --filter @pluton/web icons` regera os PNGs de `apps/web/public`.
 
 ## Testes
 
