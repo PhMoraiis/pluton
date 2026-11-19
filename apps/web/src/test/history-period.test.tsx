@@ -100,7 +100,7 @@ function renderWith(ui: React.ReactNode, client = new QueryClient({ defaultOptio
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-18T15:00:00Z') });
   entries = [];
-  summary = { expenseCents: 0, incomeCents: 0, balanceCents: 0, realizedCents: 0 };
+  summary = { expenseCents: 0, expensePaidCents: 0, incomeCents: 0, incomePaidCents: 0, balanceCents: 0, realizedCents: 0 };
   requested = [];
   online = true;
   vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);
@@ -215,7 +215,7 @@ describe('HistoryPage', () => {
 
 describe('PeriodPage', () => {
   test('PeriodPage mostra Realizado com o valor de /api/summary', async () => {
-    summary = { expenseCents: 100000, incomeCents: 250000, balanceCents: 150000, realizedCents: 123456 };
+    summary = { expenseCents: 100000, expensePaidCents: 0, incomeCents: 250000, incomePaidCents: 0, balanceCents: 150000, realizedCents: 123456 };
     renderWith(<PeriodPage />);
 
     expect(await screen.findByText(`R$${SP}1.234,56`)).toBeInTheDocument();

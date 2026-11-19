@@ -109,7 +109,7 @@ function mockFetch() {
         case '/api/default-month':
           return json({ month: '2026-12' });
         case '/api/summary':
-          return json({ expenseCents: 0, incomeCents: 0, balanceCents: 0, realizedCents: 0 });
+          return json({ expenseCents: 0, expensePaidCents: 0, incomeCents: 0, incomePaidCents: 0, balanceCents: 0, realizedCents: 0 });
         case '/api/payment-methods':
           return methodList ? json(methodList) : json({ error: 'internal' }, 500);
         default:

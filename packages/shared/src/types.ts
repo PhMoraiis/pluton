@@ -61,7 +61,9 @@ export interface MonthlySeriesDTO {
 
 export interface Summary {
   expenseCents: number;
+  expensePaidCents: number;
   incomeCents: number;
+  incomePaidCents: number;
   balanceCents: number;
   realizedCents: number;
 }

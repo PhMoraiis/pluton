@@ -78,7 +78,9 @@ describe('GET /api/summary', () => {
     const dec = await summaryOk('2026-12', '2026-12');
     expect(dec).toEqual({
       expenseCents: 150000 + 30000,
+      expensePaidCents: 0,
       incomeCents: 500000,
+      incomePaidCents: 0,
       balanceCents: 500000 - 180000,
       realizedCents: 0,
     });
@@ -87,7 +89,9 @@ describe('GET /api/summary', () => {
     const half = await summaryOk('2026-01', '2026-06');
     expect(half).toEqual({
       expenseCents: 6 * 150000 + 4500,
+      expensePaidCents: 150000 + 4500,
       incomeCents: 6 * 500000,
+      incomePaidCents: 500000,
       balanceCents: 6 * 500000 - (6 * 150000 + 4500),
       realizedCents: 500000 - 150000 - 4500,
     });
@@ -99,7 +103,9 @@ describe('GET /api/summary', () => {
     // 2028-03 está além do horizonte padrão (2027-11): precisa materializar.
     expect(await summaryOk('2028-03', '2028-03')).toEqual({
       expenseCents: 150000,
+      expensePaidCents: 0,
       incomeCents: 500000,
+      incomePaidCents: 0,
       balanceCents: 350000,
       realizedCents: 0,
     });
@@ -108,7 +114,9 @@ describe('GET /api/summary', () => {
   test('mês sem lançamentos → zeros', async () => {
     expect(await summaryOk('2026-11', '2026-11')).toEqual({
       expenseCents: 0,
+      expensePaidCents: 0,
       incomeCents: 0,
+      incomePaidCents: 0,
       balanceCents: 0,
       realizedCents: 0,
     });

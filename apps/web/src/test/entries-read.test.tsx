@@ -105,7 +105,7 @@ beforeEach(() => {
     entries: [],
     overdue: [],
     defaultMonth: '2026-12',
-    summary: { expenseCents: 0, incomeCents: 0, balanceCents: 0, realizedCents: 0 },
+    summary: { expenseCents: 0, expensePaidCents: 0, incomeCents: 0, incomePaidCents: 0, balanceCents: 0, realizedCents: 0 },
   };
   mockFetch();
   setViewport(true);
@@ -207,16 +207,25 @@ describe('EntriesPage (leitura)', () => {
   });
 
   test('SummaryBar mostra Despesas, Ganhos, Ganhos − Despesas e não exibe "Realizado"', async () => {
-    server.summary = { expenseCents: 300000, incomeCents: 500000, balanceCents: 200000, realizedCents: 1 };
+    server.summary = {
+      expenseCents: 217896,
+      expensePaidCents: 12700,
+      incomeCents: 500000,
+      incomePaidCents: 0,
+      balanceCents: 282104,
+      realizedCents: 1,
+    };
 
     renderPage();
 
-    expect(await screen.findByText(`R$${SP}3.000,00`)).toBeInTheDocument();
+    expect(await screen.findByText(`R$${SP}2.178,96`)).toBeInTheDocument();
     const bar = screen.getByLabelText('Resumo do mês');
     expect(within(bar).getByText('Despesas')).toBeInTheDocument();
     expect(within(bar).getByText('Ganhos')).toBeInTheDocument();
     expect(within(bar).getByText('Ganhos − Despesas')).toBeInTheDocument();
     expect(screen.queryByText(/realizado/i)).not.toBeInTheDocument();
+    expect(within(bar).getByText(`pago R$${SP}127,00 · a pagar R$${SP}2.051,96`)).toBeInTheDocument();
+    expect(within(bar).getByText(`recebido R$${SP}0,00 · a receber R$${SP}5.000,00`)).toBeInTheDocument();
   });
 
   test('ganhos usam kind=INCOME', async () => {

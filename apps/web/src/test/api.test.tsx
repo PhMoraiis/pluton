@@ -74,7 +74,7 @@ describe('apiFetch', () => {
       if (url.endsWith('/api/setup-status')) return json({ hasUser: true });
       // Com a sessão válida, a página de despesas carrega normalmente.
       if (sessionValid && url.startsWith('/api/default-month')) return json({ month: '2026-12' });
-      if (sessionValid && url.startsWith('/api/summary')) return json({ expenseCents: 0, incomeCents: 0, balanceCents: 0, realizedCents: 0 });
+      if (sessionValid && url.startsWith('/api/summary')) return json({ expenseCents: 0, expensePaidCents: 0, incomeCents: 0, incomePaidCents: 0, balanceCents: 0, realizedCents: 0 });
       if (sessionValid && url.startsWith('/api/')) return json([]);
       return json({ error: 'unauthorized' }, 401);
     });
