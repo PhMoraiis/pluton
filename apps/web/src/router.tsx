@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 import { Layout } from './components/Layout';
 import { RequireAuth } from './components/RequireAuth';
+import { EntriesPage } from './pages/EntriesPage';
 import { LoginPage } from './pages/LoginPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
@@ -14,8 +15,8 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <PlaceholderPage title="Despesas" /> },
-      { path: 'ganhos', element: <PlaceholderPage title="Ganhos" /> },
+      { index: true, element: <EntriesPage kind="EXPENSE" /> },
+      { path: 'ganhos', element: <EntriesPage kind="INCOME" /> },
       { path: 'historico', element: <PlaceholderPage title="Histórico" /> },
       { path: 'periodo', element: <PlaceholderPage title="Período" /> },
       { path: 'importar', element: <PlaceholderPage title="Importar" /> },
