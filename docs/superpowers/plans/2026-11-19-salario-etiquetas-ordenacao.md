@@ -178,6 +178,7 @@
 - Consumes: `EntryInputError`, `lockSeries` e o fluxo de `updateEntry` existentes.
 - Produces:
   - `tagIdsSchema = z.array(z.string().min(1)).max(20).refine(unique)`, exportado de `routes/entries.ts` para as Tasks 5 e 6.
+  - `lockSeries(tx, seriesId)` passa a ser **exportado** de `services/entries.ts` (usado nas Tasks 5 e 6).
   - Em `services/tags.ts`:
     - `assertTagsOwned(tx, userId, tagIds): Promise<void>`: lança `EntryInputError('invalid_tag')`;
     - `setEntryTags(tx, entryIds: string[], tagIds: string[], opts?: { onlyUnpaid?: boolean }): Promise<void>`: substitui as ligações; com `onlyUnpaid`, só mexe em entradas com `paidOn: null`, reavaliado na gravação;
@@ -247,7 +248,7 @@
 - Test: `apps/api/test/salary.test.ts`
 
 **Interfaces:**
-- Consumes: `materializeSeries`, `horizonMonth`, `endSeries` e `lockSeries` (este último exportado de `services/entries.ts`); `addMonthsClamped`; `SalaryDTO`; `inputMonthKeySchema`; `amountSchema` (exportar de `routes/entries.ts` se ainda não for).
+- Consumes: `materializeSeries`, `horizonMonth`, `endSeries` e `lockSeries` (exportado na Task 4); `addMonthsClamped`; `SalaryDTO`; `inputMonthKeySchema`; `amountSchema` (exportar de `routes/entries.ts` se ainda não for).
 - Produces:
   - `GET /api/salary` → `SalaryDTO | null`. Salário ativo = série `role: SALARY` com `endedOn = null`. `startMonth` = mês da entrada de menor `sequence`; sem entradas, o mês de `generatedThrough`.
   - `PUT /api/salary { amountCents, dayOfMonth: int 1–31, startMonth: MonthKey, paymentMethodId: string | null }` → `SalaryDTO`. Tudo numa transação com `pg_advisory_xact_lock(hashtext('salary:' || userId))`.
