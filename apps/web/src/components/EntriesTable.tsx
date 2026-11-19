@@ -183,8 +183,8 @@ export function EntriesTable({ rows, overdue = false, caption, footerRow, emptyM
               const title = flexRender(h.column.columnDef.header, h.getContext());
               if (!onSort || !sortKey) {
                 return (
-                  <th key={h.id} className={`px-2 py-1.5 font-normal${right ? ' block text-right' : ''}`}>
-                    {title}
+                  <th key={h.id} className="px-2 py-1.5 font-normal">
+                    {right ? <span className="block text-right">{title}</span> : title}
                   </th>
                 );
               }

@@ -445,7 +445,9 @@ describe('EntriesPage (leitura)', () => {
       server.overdue = [entry({ id: 'late', displayName: 'Luz 2/3', amountCents: 15000, dueDate: '2026-10-10' })];
       renderPage();
       const section = await screen.findByRole('region', { name: 'Atrasados' });
-      expect(within(section).getByRole('columnheader', { name: 'Valor' })).toHaveClass('text-right');
+      const valor = within(section).getByRole('columnheader', { name: 'Valor' });
+      expect(valor).not.toHaveClass('block');
+      expect(within(valor).getByText('Valor')).toHaveClass('text-right');
       expect(within(section).getByRole('columnheader', { name: 'Nome' })).not.toHaveClass('text-right');
     });
   });
