@@ -6,6 +6,7 @@ import {
   isValidDueDate,
   MAX_NAME_LENGTH,
   methodPatch,
+  knownTagIds,
   parseAmount,
   sameTagSet,
   sortedMethods,
@@ -117,11 +118,17 @@ function TagsCell({ entry }: { entry: EntryDTO }) {
   const latest = useRef({ draft, entry, edit });
   latest.current = { draft, entry, edit };
 
+  // Sem conexão com o painel aberto: fecha sem aplicar (e desarma os listeners).
+  useEffect(() => {
+    if (!canWrite) setOpen(false);
+  }, [canWrite]);
+
   function close() {
     const { draft: d, entry: e, edit: save } = latest.current;
+    const known = knownTagIds(e.tagIds, tags);
     setOpen(false);
     trigger.current?.focus();
-    if (!sameTagSet(d, e.tagIds)) save(e, { tagIds: d });
+    if (!sameTagSet(d, known)) save(e, { tagIds: d });
   }
   const closeRef = useRef(close);
   closeRef.current = close;
@@ -156,7 +163,7 @@ function TagsCell({ entry }: { entry: EntryDTO }) {
         aria-expanded={open}
         disabled={!canWrite}
         onClick={() => {
-          setDraft(entry.tagIds);
+          setDraft(knownTagIds(entry.tagIds, tags));
           setOpen(true);
         }}
         className="rounded px-1 py-0.5 text-left hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"

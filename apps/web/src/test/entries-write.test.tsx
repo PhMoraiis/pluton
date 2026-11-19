@@ -111,6 +111,7 @@ function mockFetch() {
             ids.every((t) => typeof t === 'string' && t.length > 0) &&
             new Set(ids).size === ids.length;
           if (!valid) return json({ error: 'invalid_body' }, 400);
+          if ((ids as string[]).some((t) => !tagList.some((x) => x.id === t))) return json({ error: 'invalid_tag' }, 400);
           const id = decodeURIComponent(url.pathname.split('/')[3]!);
           const current = entries.find((e) => e.id === id);
           const changed =
@@ -836,6 +837,61 @@ describe('EntriesPage (escrita) — etiquetas', () => {
     expect(trigger).toBeDisabled();
     fireEvent.click(trigger);
     expect(screen.queryByRole('button', { name: 'Aplicar' })).not.toBeInTheDocument();
+  });
+});
+
+describe('EntriesPage (escrita) — etiquetas obsoletas e offline', () => {
+  test('tabela: id de etiqueta excluída não vai no PATCH', async () => {
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05', tagIds: ['t-gone', 't-casa'] })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Etiquetas: Aluguel' }));
+    expect(screen.getByRole('checkbox', { name: 'Casa' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Assinatura' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    const sent = (calls[0]!.body as { tagIds: string[] }).tagIds;
+    expect([...sent].sort()).toEqual(['t-casa', 't-sub']);
+  });
+
+  test('tabela: só o id obsoleto não conta como mudança', async () => {
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05', tagIds: ['t-gone', 't-casa'] })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Etiquetas: Aluguel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(calls).toHaveLength(0);
+  });
+
+  test('formulário: id obsoleto não vai no PATCH', async () => {
+    setViewport(false);
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05', tagIds: ['t-gone', 't-casa'] })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar: Aluguel' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    fireEvent.click(within(sheet).getByRole('checkbox', { name: 'Assinatura' }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect([...(calls[0]!.body as { tagIds: string[] }).tagIds].sort()).toEqual(['t-casa', 't-sub']);
+  });
+
+  test('ficar offline com o painel aberto fecha sem aplicar; Esc depois não envia', async () => {
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Etiquetas: Aluguel' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Assinatura' }));
+    online = false;
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Aplicar' })).not.toBeInTheDocument());
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent.mouseDown(document.body);
+    expect(calls).toHaveLength(0);
   });
 });
 

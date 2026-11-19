@@ -58,6 +58,11 @@ export function installmentHint(name: string): string | null {
   return parsed ? `Cria parcelas ${parsed.current} a ${parsed.total}, uma por mês` : null;
 }
 
+/** Só os ids de etiquetas que ainda existem (excluída em outra aba some depois do refetch). */
+export function knownTagIds(ids: string[], tags: Map<string, unknown>): string[] {
+  return ids.filter((id) => tags.has(id));
+}
+
 /** Mesmo conjunto de etiquetas, sem importar a ordem. */
 export function sameTagSet(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
@@ -95,7 +100,7 @@ export function emptyDraft(dueDate: IsoDate, methodId: string): EntryDraft {
   return { name: '', amount: '', dueDate, methodId, pixKey: '', monthly: false, tagIds: [] };
 }
 
-export function draftFromEntry(entry: EntryDTO): EntryDraft {
+export function draftFromEntry(entry: EntryDTO, tags?: Map<string, unknown>): EntryDraft {
   return {
     name: entry.displayName,
     amount: centsToInput(entry.amountCents),
@@ -103,7 +108,7 @@ export function draftFromEntry(entry: EntryDTO): EntryDraft {
     methodId: entry.paymentMethodId ?? '',
     pixKey: entry.pixKey ?? '',
     monthly: entry.seriesType === 'MONTHLY',
-    tagIds: entry.tagIds,
+    tagIds: tags ? knownTagIds(entry.tagIds, tags) : entry.tagIds,
   };
 }
 
@@ -143,6 +148,7 @@ export function draftToPatch(
   entry: EntryDTO,
   draft: EntryDraft,
   methods: Map<string, PaymentMethodDTO>,
+  tags?: Map<string, unknown>,
 ): Result<EntryPatch> {
   const v = validate(draft);
   if (!v.ok) return v;
@@ -160,6 +166,8 @@ export function draftToPatch(
     // inalterado (ex.: lista de métodos ainda não carregada), a chave gravada fica como está.
     patch.pixKey = null;
   }
-  if (!sameTagSet(draft.tagIds, entry.tagIds)) patch.tagIds = draft.tagIds;
+  const draftTags = tags ? knownTagIds(draft.tagIds, tags) : draft.tagIds;
+  const entryTags = tags ? knownTagIds(entry.tagIds, tags) : entry.tagIds;
+  if (!sameTagSet(draftTags, entryTags)) patch.tagIds = draftTags;
   return { ok: true, value: patch };
 }

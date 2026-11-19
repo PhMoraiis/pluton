@@ -119,7 +119,7 @@ export function EntryActionsProvider({ kind, canWrite, methods, tags, children }
   };
 
   function submitSheet(entry: EntryDTO, draft: EntryDraft) {
-    const result = draftToPatch(entry, draft, methods);
+    const result = draftToPatch(entry, draft, methods, tags);
     if (!result.ok) return setSheet({ entry, error: result.error });
     setSheet(null);
     value.edit(entry, result.value);
@@ -192,7 +192,7 @@ export function EntryActionsProvider({ kind, canWrite, methods, tags, children }
       {sheet && (
         <EntrySheet
           mode="edit"
-          initial={draftFromEntry(sheet.entry)}
+          initial={draftFromEntry(sheet.entry, tags)}
           methods={[...methods.values()]}
           tags={[...tags.values()]}
           canWrite={canWrite}
