@@ -17,7 +17,7 @@ import {
 import { ensureMaterialized, MONTHLY_HORIZON_MONTHS } from '../services/materialize';
 
 /** Limite de `int4` no Postgres. */
-const MAX_CENTS = 2_147_483_647;
+export const MAX_CENTS = 2_147_483_647;
 
 /** Faixa de anos aceita em datas digitadas (evita lixo como 0001 ou 9999). */
 const MIN_YEAR = 2000;
@@ -33,7 +33,7 @@ export const monthKeySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 /** `MonthKey` digitado (anos 2000..2100). */
 export const inputMonthKeySchema = monthKeySchema.refine(yearInRange);
 /** `IsoDate` de vencimento: existe no calendário e está em 2000..2100. */
-const dueDateSchema = z.string().refine(isValidIsoDate).refine(yearInRange);
+export const dueDateSchema = z.string().refine(isValidIsoDate).refine(yearInRange);
 const nameSchema = z.string().trim().min(1).max(120);
 const amountSchema = z.number().int().positive().max(MAX_CENTS);
 const pixKeySchema = z.string().max(140).nullish();
