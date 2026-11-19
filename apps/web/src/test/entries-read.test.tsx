@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { EntryDTO, EntryKind, PaymentMethodDTO, Summary } from '@pluton/shared';
 import { queryKeys } from '../lib/queryKeys';
@@ -84,6 +84,11 @@ function setViewport(desktop: boolean) {
   }));
 }
 
+function LocationProbe() {
+  const loc = useLocation();
+  return <output data-testid="location">{loc.pathname + loc.search}</output>;
+}
+
 function renderPage(
   kind: EntryKind = 'EXPENSE',
   url = '/',
@@ -93,6 +98,7 @@ function renderPage(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[url]}>
         <EntriesPage kind={kind} />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -256,5 +262,101 @@ describe('EntriesPage (leitura)', () => {
 
     expect(await screen.findByText('Não foi possível carregar os atrasados.')).toBeInTheDocument();
     expect(await screen.findByText('Não foi possível carregar o resumo.')).toBeInTheDocument();
+  });
+
+  describe('ordenação', () => {
+    const sortRows = () => [
+      entry({ id: 'a', displayName: 'Aluguel', amountCents: 50000, dueDate: '2026-12-05' }),
+      entry({ id: 'b', displayName: 'Café', amountCents: 700, dueDate: '2026-12-06' }),
+      entry({ id: 'c', displayName: 'Mercado', amountCents: 25000, dueDate: '2026-12-07' }),
+    ];
+    const tableNames = () =>
+      within(screen.getByRole('table', { name: 'Lançamentos de despesas' }))
+        .getAllByRole('row')
+        .map((r) => r.textContent ?? '')
+        .filter((t) => /Aluguel|Café|Mercado/.test(t))
+        .map((t) => /Aluguel|Café|Mercado/.exec(t)![0]);
+    const location = () => screen.getByTestId('location').textContent;
+
+    test('clicar em "Valor" ordena crescente, de novo decrescente, e grava ?ordem= na URL', async () => {
+      server.entries = sortRows();
+      renderPage();
+      await screen.findByText('Aluguel');
+      expect(tableNames()).toEqual(['Aluguel', 'Café', 'Mercado']);
+
+      fireEvent.click(screen.getByRole('button', { name: /^Valor/ }));
+      expect(tableNames()).toEqual(['Café', 'Mercado', 'Aluguel']);
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute('aria-sort', 'ascending');
+      expect(screen.getByRole('columnheader', { name: /Nome/ })).toHaveAttribute('aria-sort', 'none');
+      expect(location()).toContain('ordem=valor-asc');
+
+      fireEvent.click(screen.getByRole('button', { name: /^Valor/ }));
+      expect(tableNames()).toEqual(['Aluguel', 'Mercado', 'Café']);
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute('aria-sort', 'descending');
+      expect(location()).toContain('ordem=valor-desc');
+
+      fireEvent.click(screen.getByRole('button', { name: /^Valor/ }));
+      expect(location()).not.toContain('ordem');
+      expect(tableNames()).toEqual(['Aluguel', 'Café', 'Mercado']);
+    });
+
+    test.each(['foo', 'valor'])('?ordem=%s inválido usa a ordem padrão e não quebra', async (bad) => {
+      server.entries = sortRows();
+      renderPage('EXPENSE', `/?mes=2026-12&ordem=${bad}`);
+      await screen.findByText('Aluguel');
+      expect(tableNames()).toEqual(['Aluguel', 'Café', 'Mercado']);
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute('aria-sort', 'none');
+    });
+
+    test('trocar o mês mantém ordem e ordenar mantém mes', async () => {
+      server.entries = sortRows();
+      renderPage('EXPENSE', '/?mes=2026-12&ordem=valor-desc');
+      await screen.findByText('Aluguel');
+      expect(tableNames()).toEqual(['Aluguel', 'Mercado', 'Café']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mês seguinte' }));
+      expect(location()).toContain('mes=2027-01');
+      expect(location()).toContain('ordem=valor-desc');
+
+      fireEvent.click(await screen.findByRole('button', { name: /^Nome/ }));
+      expect(location()).toContain('mes=2027-01');
+      expect(location()).toContain('ordem=nome-asc');
+    });
+
+    test('atrasados continuam por data e sem botões de ordenação', async () => {
+      server.overdue = [
+        entry({ id: 'o2', displayName: 'Zeta', amountCents: 100, dueDate: '2026-10-20' }),
+        entry({ id: 'o1', displayName: 'Alfa', amountCents: 900, dueDate: '2026-10-10' }),
+      ];
+      server.entries = sortRows();
+      renderPage('EXPENSE', '/?mes=2026-12&ordem=valor-desc');
+      const section = await screen.findByRole('region', { name: 'Atrasados' });
+      await screen.findByText('Aluguel');
+      const order = within(section)
+        .getAllByRole('row')
+        .map((r) => /Zeta|Alfa/.exec(r.textContent ?? '')?.[0])
+        .filter(Boolean);
+      expect(order).toEqual(['Zeta', 'Alfa']);
+      expect(within(section).queryByRole('button', { name: /^Valor/ })).not.toBeInTheDocument();
+    });
+
+    test('no celular, o seletor "Ordenar por" reordena os cartões e atualiza a URL', async () => {
+      setViewport(false);
+      server.entries = sortRows();
+      renderPage();
+      await screen.findByText('Aluguel');
+      const select = screen.getByRole('combobox', { name: 'Ordenar por' });
+      expect(within(select).getAllByRole('option')).toHaveLength(9);
+
+      fireEvent.change(select, { target: { value: 'valor-desc' } });
+      const text = document.body.textContent ?? '';
+      expect(text.indexOf('Aluguel')).toBeLessThan(text.indexOf('Mercado'));
+      expect(text.indexOf('Mercado')).toBeLessThan(text.indexOf('Café'));
+      expect(location()).toContain('ordem=valor-desc');
+      expect(within(select).getByRole('option', { name: 'Valor (maior primeiro)' })).toBeInTheDocument();
+
+      fireEvent.change(select, { target: { value: '' } });
+      expect(location()).not.toContain('ordem');
+    });
   });
 });

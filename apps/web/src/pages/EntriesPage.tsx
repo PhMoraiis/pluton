@@ -20,6 +20,7 @@ import { SummaryBar } from '../components/SummaryBar';
 import { apiFetch } from '../lib/api';
 import { useCanWrite } from '../lib/online';
 import { queryKeys } from '../lib/queryKeys';
+import { formatSort, nextSort, parseSort, sortEntries, SORT_OPTIONS, type SortKey } from '../lib/sortEntries';
 import { useIsDesktop } from '../lib/useMediaQuery';
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -88,6 +89,9 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
   const desktop = useIsDesktop();
   const methods = useMemo(() => new Map((methodList ?? []).map((m) => [m.id, m])), [methodList]);
 
+  const sortParam = params.get('ordem');
+  const sort = parseSort(sortParam);
+
   const [methodFilter, setMethodFilter] = useState<ReadonlySet<string>>(new Set());
   const [search, setSearch] = useState('');
 
@@ -95,16 +99,36 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
   const rows = useMemo(() => {
     const overdueIds = new Set((overdue.data ?? []).map((e) => e.id));
     const needle = search.trim().toLocaleLowerCase('pt-BR');
-    return (entries.data ?? []).filter(
+    const filtered = (entries.data ?? []).filter(
       (e) =>
         !overdueIds.has(e.id) &&
         (methodFilter.size === 0 || (e.paymentMethodId != null && methodFilter.has(e.paymentMethodId))) &&
         (needle === '' || e.displayName.toLocaleLowerCase('pt-BR').includes(needle)),
     );
-  }, [entries.data, overdue.data, methodFilter, search]);
+    return sortEntries(filtered, parseSort(sortParam), methods);
+  }, [entries.data, overdue.data, methodFilter, search, sortParam, methods]);
 
   function selectMonth(next: MonthSelection) {
-    setParams({ mes: next }, { replace: true });
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.set('mes', next);
+        return p;
+      },
+      { replace: true },
+    );
+  }
+
+  function setSort(value: string | null) {
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (value) p.set('ordem', value);
+        else p.delete('ordem');
+        return p;
+      },
+      { replace: true },
+    );
   }
 
   function toggleMethod(id: string) {
@@ -180,6 +204,20 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
               ))}
             </div>
           )}
+          {!desktop && (
+            <select
+              aria-label="Ordenar por"
+              value={formatSort(sort) ?? ''}
+              onChange={(e) => setSort(e.target.value || null)}
+              className="rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {stale && (
@@ -198,6 +236,8 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
               <EntriesTable
                 rows={rows}
                 caption={`Lançamentos de ${title}`}
+                sort={sort}
+                onSort={(key: SortKey) => setSort(formatSort(nextSort(sort, key)))}
                 emptyMessage="Nenhum lançamento pendente."
                 footerRow={<NewEntryRow {...newEntryProps} variant="table" columns={TABLE_COLUMNS} />}
               />
