@@ -51,8 +51,17 @@ function mockFetch() {
       requested.push(`${init?.method ?? 'GET'} ${url.pathname}${url.search}`);
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      if (url.pathname === '/api/entries') return json(entries);
-      if (url.pathname === '/api/summary') return json(summary);
+      const invalidQuery = () => new Response(JSON.stringify({ error: 'invalid_query' }), { status: 400 });
+      const q = url.searchParams;
+      if (url.pathname === '/api/entries') {
+        // Regras reais da API: from e to juntos; sem eles só com status=pending.
+        if ((q.has('from') !== q.has('to')) || (!q.has('from') && q.get('status') !== 'pending')) return invalidQuery();
+        return json(entries);
+      }
+      if (url.pathname === '/api/summary') {
+        if (!q.has('from') || !q.has('to')) return invalidQuery();
+        return json(summary);
+      }
       if (url.pathname === '/api/payment-methods') return json(methods);
       if (/^\/api\/entries\/[^/]+\/pay$/.test(url.pathname)) return json(entries[0]);
       return new Response('not found', { status: 404 });
@@ -120,7 +129,7 @@ describe('HistoryPage', () => {
     expect(within(out).getByText('Pix')).toBeInTheDocument();
     const nov = screen.getByRole('region', { name: 'nov. de 2026' });
     expect(within(within(nov).getByRole('banner')).getByText(`R$${SP}99,90`)).toBeInTheDocument();
-    expect(requested).toContain('GET /api/entries?kind=EXPENSE&from=2026-06&status=paid');
+    expect(requested).toContain('GET /api/entries?kind=EXPENSE&from=2026-06&to=2027-11&status=paid');
   });
 
   test('conta que vence 2026-12-05 e foi paga 2026-11-28 aparece na coluna de dez.', async () => {
@@ -155,14 +164,14 @@ describe('HistoryPage', () => {
     await screen.findByRole('region', { name: 'nov. de 2026' });
     fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }));
     expect(await screen.findByRole('region', { name: 'dez. de 2025' })).toBeInTheDocument();
-    expect(requested).toContain('GET /api/entries?kind=EXPENSE&from=2025-12&status=paid');
+    expect(requested).toContain('GET /api/entries?kind=EXPENSE&from=2025-12&to=2027-11&status=paid');
   });
 
   test('alternar para Ganhos consulta kind=INCOME', async () => {
     renderWith(<HistoryPage />);
     await screen.findByRole('region', { name: 'nov. de 2026' });
     fireEvent.click(screen.getByRole('button', { name: 'Ganhos' }));
-    await waitFor(() => expect(requested).toContain('GET /api/entries?kind=INCOME&from=2026-06&status=paid'));
+    await waitFor(() => expect(requested).toContain('GET /api/entries?kind=INCOME&from=2026-06&to=2027-11&status=paid'));
   });
 
   test('no celular mostra um mês por vez com setas', async () => {
@@ -175,6 +184,16 @@ describe('HistoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
     expect(screen.getByRole('region', { name: 'out. de 2026' })).toBeInTheDocument();
     expect(screen.getByText('Aluguel')).toBeInTheDocument();
+  });
+
+  test('no celular, ‹ na coluna mais antiga carrega mais e vai para o mês anterior', async () => {
+    setViewport(false);
+    renderWith(<HistoryPage />);
+    await screen.findByRole('region', { name: 'nov. de 2026' });
+    for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    expect(await screen.findByRole('region', { name: 'jun. de 2026' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    expect(await screen.findByRole('region', { name: 'mai. de 2026' })).toBeInTheDocument();
   });
 
   test('mantém os dados e avisa "Mostrando dados salvos" quando a recarga falha', async () => {

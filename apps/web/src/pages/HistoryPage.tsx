@@ -73,12 +73,14 @@ export function HistoryPage() {
   const [mobileMonth, setMobileMonth] = useState<MonthKey | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const from = addMonthsToKey(current, -(months - 1));
+  // A API exige `from` e `to` juntos; +12 meses cobre pagas adiantadas com vencimento futuro.
+  const to = addMonthsToKey(current, 12);
   const canWrite = useCanWrite();
   const desktop = useIsDesktop();
 
   const entries = useQuery({
-    queryKey: queryKeys.entries({ kind, from, status: 'paid' }),
-    queryFn: () => apiFetch<EntryDTO[]>(`/api/entries?${new URLSearchParams({ kind, from, status: 'paid' })}`),
+    queryKey: queryKeys.entries({ kind, from, to, status: 'paid' }),
+    queryFn: () => apiFetch<EntryDTO[]>(`/api/entries?${new URLSearchParams({ kind, from, to, status: 'paid' })}`),
     placeholderData: keepPreviousData,
   });
   const methodsQuery = useQuery({
@@ -87,7 +89,7 @@ export function HistoryPage() {
   });
   const methods = useMemo(() => new Map((methodsQuery.data ?? []).map((m) => [m.id, m])), [methodsQuery.data]);
 
-  // Agrupa pelo mês do VENCIMENTO. Sem `to`, pagas adiantadas de meses futuros também aparecem.
+  // Agrupa pelo mês do VENCIMENTO. Pagas adiantadas de meses futuros também aparecem (até `to`).
   const columns = useMemo<Column[]>(() => {
     const byMonth = new Map<MonthKey, EntryDTO[]>();
     for (const e of entries.data ?? []) {
@@ -126,7 +128,11 @@ export function HistoryPage() {
   function step(delta: number) {
     const target = columns[shownIndex + delta];
     if (target) setMobileMonth(target.month);
-    else if (delta < 0) loadMore();
+    else if (delta < 0) {
+      // A coluna do mês anterior já existe no próximo render (dados antigos ficam como placeholder).
+      loadMore();
+      setMobileMonth(addMonthsToKey(shown, -1));
+    }
   }
 
   return (
