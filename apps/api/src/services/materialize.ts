@@ -104,8 +104,11 @@ export async function ensureMaterialized(userId: string, throughMonth: MonthKey)
   const startBySeries = new Map(starts.map((s) => [s.seriesId, s._min.dueDate]));
 
   for (const s of pending) {
-    const anchor = startBySeries.get(s.id) ?? s.generatedThrough!;
-    const horizon = horizonMonth(through, monthKeyOf(toIsoDate(anchor)), todayMonth);
+    // Série ativa sem nenhuma entrada (todas apagadas): o início vira o mês de hoje, não
+    // `generatedThrough` — senão o horizonte saltaria 12 meses à frente do último gerado.
+    const start = startBySeries.get(s.id);
+    const startMonth = start ? monthKeyOf(toIsoDate(start)) : todayMonth;
+    const horizon = horizonMonth(through, startMonth, todayMonth);
     if (monthKeyOf(toIsoDate(s.generatedThrough!)) >= horizon) continue;
     await prisma.$transaction((tx) => materializeSeries(tx, s.id, horizon));
   }

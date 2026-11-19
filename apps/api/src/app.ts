@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { auth } from './auth';
 import { defaultMonthRoutes, entryRoutes } from './routes/entries';
 import { paymentMethodRoutes } from './routes/payment-methods';
+import { seriesRoutes } from './routes/series';
 import { setupRoutes } from './routes/setup';
 
 /** App HTTP completo; todas as rotas ficam sob `/api`. */
@@ -13,6 +14,7 @@ export function createApp(): Hono {
   api.route('/', setupRoutes);
   api.route('/payment-methods', paymentMethodRoutes);
   api.route('/entries', entryRoutes);
+  api.route('/series', seriesRoutes);
   api.route('/default-month', defaultMonthRoutes);
 
   app.route('/api', api);

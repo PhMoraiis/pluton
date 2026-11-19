@@ -6,30 +6,63 @@ import { requireUser, type AppEnv } from '../middleware/require-user';
 import { isValidIsoDate } from '../services/dto';
 import {
   createEntries,
+  deleteEntry,
   EntryInputError,
   getDefaultMonth,
   listEntries,
   listOverdue,
   setPaid,
+  updateEntry,
 } from '../services/entries';
 import { ensureMaterialized, MONTHLY_HORIZON_MONTHS } from '../services/materialize';
 
 /** Limite de `int4` no Postgres. */
 const MAX_CENTS = 2_147_483_647;
 
+/** Faixa de anos aceita em datas digitadas (evita lixo como 0001 ou 9999). */
+const MIN_YEAR = 2000;
+const MAX_YEAR = 2100;
+
+function yearInRange(value: string): boolean {
+  const year = Number(value.slice(0, 4));
+  return year >= MIN_YEAR && year <= MAX_YEAR;
+}
+
 const kindSchema = z.enum(['EXPENSE', 'INCOME']);
-const monthKeySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+export const monthKeySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+/** `MonthKey` digitado (anos 2000..2100). */
+export const inputMonthKeySchema = monthKeySchema.refine(yearInRange);
+/** `IsoDate` de vencimento: existe no calendário e está em 2000..2100. */
+const dueDateSchema = z.string().refine(isValidIsoDate).refine(yearInRange);
+const nameSchema = z.string().trim().min(1).max(120);
+const amountSchema = z.number().int().positive().max(MAX_CENTS);
+const pixKeySchema = z.string().max(140).nullish();
+const noteSchema = z.string().max(2000).optional();
 
 const createSchema = z.object({
   kind: kindSchema,
-  name: z.string().trim().min(1).max(120),
-  amountCents: z.number().int().positive().max(MAX_CENTS),
-  dueDate: z.string().refine(isValidIsoDate),
+  name: nameSchema,
+  amountCents: amountSchema,
+  dueDate: dueDateSchema,
   paymentMethodId: z.string().min(1).nullish(),
-  pixKey: z.string().max(140).nullish(),
-  note: z.string().max(2000).optional(),
+  pixKey: pixKeySchema,
+  note: noteSchema,
   monthly: z.boolean().optional(),
 });
+
+const updateSchema = z
+  .object({
+    scope: z.enum(['this', 'following']).optional(),
+    name: nameSchema.optional(),
+    amountCents: amountSchema.optional(),
+    dueDate: dueDateSchema.optional(),
+    paymentMethodId: z.string().min(1).nullable().optional(),
+    pixKey: pixKeySchema,
+    note: noteSchema,
+  })
+  .refine((b) => Object.entries(b).some(([key, value]) => key !== 'scope' && value !== undefined));
+
+const deleteQuerySchema = z.object({ scope: z.enum(['this', 'following', 'series']).optional() });
 
 const listSchema = z
   .object({
@@ -45,14 +78,14 @@ const listSchema = z
 const kindQuerySchema = z.object({ kind: kindSchema });
 const paySchema = z.object({ paid: z.boolean() });
 
-function invalid(target: 'json' | 'query') {
+export function invalid(target: 'json' | 'query') {
   const error = target === 'json' ? 'invalid_body' : 'invalid_query';
   return (result: { success: boolean }, c: Context) => {
     if (!result.success) return c.json({ error }, 400);
   };
 }
 
-const notFound = { error: 'not_found' } as const;
+export const notFound = { error: 'not_found' } as const;
 
 function currentMonth() {
   return monthKeyOf(todayInSaoPaulo());
@@ -88,7 +121,39 @@ export const entryRoutes = new Hono<AppEnv>()
     return c.json(await listEntries(userId, { kind, status, range }));
   })
   .get('/overdue', zValidator('query', kindQuerySchema, invalid('query')), async (c) => {
-    return c.json(await listOverdue(c.get('userId'), c.req.valid('query').kind));
+    const userId = c.get('userId');
+    await ensureMaterialized(userId, currentMonth());
+    return c.json(await listOverdue(userId, c.req.valid('query').kind));
+  })
+  .patch('/:id', zValidator('json', updateSchema, invalid('json')), async (c) => {
+    const body = c.req.valid('json');
+    try {
+      const changed = await updateEntry(c.get('userId'), c.req.param('id'), {
+        scope: body.scope,
+        name: body.name,
+        amountCents: body.amountCents,
+        dueDate: body.dueDate,
+        paymentMethodId: body.paymentMethodId,
+        // String vazia limpa a chave (mesma regra da criação).
+        pixKey: body.pixKey === undefined ? undefined : body.pixKey ? body.pixKey : null,
+        note: body.note,
+      });
+      if (!changed) return c.json(notFound, 404);
+      return c.json(changed);
+    } catch (err) {
+      if (err instanceof EntryInputError) return c.json({ error: err.code }, 400);
+      throw err;
+    }
+  })
+  .delete('/:id', zValidator('query', deleteQuerySchema, invalid('query')), async (c) => {
+    try {
+      const deleted = await deleteEntry(c.get('userId'), c.req.param('id'), c.req.valid('query').scope);
+      if (!deleted) return c.json(notFound, 404);
+      return c.body(null, 204);
+    } catch (err) {
+      if (err instanceof EntryInputError) return c.json({ error: err.code }, 400);
+      throw err;
+    }
   })
   .post('/:id/pay', zValidator('json', paySchema, invalid('json')), async (c) => {
     const entry = await setPaid(c.get('userId'), c.req.param('id'), c.req.valid('json').paid);
