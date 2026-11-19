@@ -41,7 +41,7 @@ export interface CreateEntryInput {
   monthly: boolean;
 }
 
-async function assertPaymentMethodOwned(userId: string, paymentMethodId: string | null): Promise<void> {
+export async function assertPaymentMethodOwned(userId: string, paymentMethodId: string | null): Promise<void> {
   if (paymentMethodId === null) return;
   const owned = await prisma.paymentMethod.count({ where: { id: paymentMethodId, userId } });
   if (owned === 0) throw new EntryInputError('invalid_payment_method');
@@ -262,6 +262,8 @@ async function deleteSeriesIfEmpty(tx: Prisma.TransactionClient, seriesId: strin
  *   do total (exige `following`) ajusta `totalInstallments`, gerando ou apagando parcelas
  *   não pagas. `x` é ignorado.
  * - `note` é sempre só da entrada.
+ * - Série `SALARY`, valor mudado: `this` marca `amountAdjusted`; `following` desmarca a
+ *   editada e não sobrescreve o valor das seguintes ajustadas (a data propaga).
  */
 export async function updateEntry(
   userId: string,
@@ -343,10 +345,16 @@ export async function updateEntry(
     }
 
     const changedIds = new Set<string>([id]);
+    /**
+     * Valor mudado numa série de salário: `this` marca a entrada como ajustada à mão;
+     * `following` desmarca a editada e preserva o valor das seguintes ajustadas.
+     */
+    const salaryAmountChange = series.role === 'SALARY' && change.amountCents !== undefined;
 
     if (input.scope !== 'following') {
       if (tagIds !== undefined) await setEntryTags(tx, [id], tagIds);
-      const updated = await tx.entry.update({ where: { id }, data: ownData, include: entryInclude });
+      const data = salaryAmountChange ? { ...ownData, amountAdjusted: true } : ownData;
+      const updated = await tx.entry.update({ where: { id }, data, include: entryInclude });
       return [updated];
     }
 
@@ -366,7 +374,11 @@ export async function updateEntry(
         entry.sequence,
         { dueDate: change.dueDate, amountCents: change.amountCents },
       );
+      // `amountAdjusted` só muda sob a trava da série, então a leitura acima vale na gravação.
+      const adjusted = new Set(salaryAmountChange ? all.filter((e) => e.amountAdjusted).map((e) => e.id) : []);
       for (const u of updates) {
+        const keepAmount = u.id !== id && adjusted.has(u.id);
+        if (keepAmount && u.dueDate === undefined) continue;
         // `setPaid` não pega a trava da série: uma seguinte pode ter sido paga depois da
         // leitura acima. O filtro `paidOn: null` é reavaliado na gravação (após a trava de
         // linha), então uma parcela paga no meio do caminho fica intocada.
@@ -374,7 +386,8 @@ export async function updateEntry(
           where: u.id === id ? { id } : { id: u.id, paidOn: null },
           data: {
             dueDate: u.dueDate !== undefined ? fromIsoDate(u.dueDate) : undefined,
-            amountCents: u.amountCents,
+            amountCents: keepAmount ? undefined : u.amountCents,
+            ...(u.id === id && salaryAmountChange ? { amountAdjusted: false } : {}),
           },
         });
         if (count > 0) changedIds.add(u.id);

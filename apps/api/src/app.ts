@@ -4,6 +4,7 @@ import { auth } from './auth';
 import { defaultMonthRoutes, entryRoutes, notFound } from './routes/entries';
 import { importRoutes } from './routes/import';
 import { paymentMethodRoutes } from './routes/payment-methods';
+import { salaryRoutes } from './routes/salary';
 import { seriesRoutes } from './routes/series';
 import { setupRoutes } from './routes/setup';
 import { summaryRoutes } from './routes/summary';
@@ -40,6 +41,7 @@ export function createApp(options: AppOptions = {}): Hono {
   api.route('/tags', tagRoutes);
   api.route('/entries', entryRoutes);
   api.route('/series', seriesRoutes);
+  api.route('/salary', salaryRoutes);
   api.route('/default-month', defaultMonthRoutes);
   api.route('/summary', summaryRoutes);
   api.route('/import', importRoutes);

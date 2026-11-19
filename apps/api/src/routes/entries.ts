@@ -35,7 +35,7 @@ export const inputMonthKeySchema = monthKeySchema.refine(yearInRange);
 /** `IsoDate` de vencimento: existe no calendário e está em 2000..2100. */
 export const dueDateSchema = z.string().refine(isValidIsoDate).refine(yearInRange);
 const nameSchema = z.string().trim().min(1).max(120);
-const amountSchema = z.number().int().positive().max(MAX_CENTS);
+export const amountSchema = z.number().int().positive().max(MAX_CENTS);
 const pixKeySchema = z.string().max(140).nullish();
 const noteSchema = z.string().max(2000).optional();
 /** Etiquetas de um lançamento: ids não vazios, sem repetição, no máximo 20. */
