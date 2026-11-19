@@ -213,6 +213,7 @@ function mockFetch() {
         }
       }
       if (url.pathname === '/api/salary' && method === 'GET') return json(null);
+      if (url.pathname === '/api/series/monthly' && method === 'GET') return json([]);
       if (url.pathname === '/api/tags') {
         if (method === 'GET') return json(tags);
         if (method === 'POST') {

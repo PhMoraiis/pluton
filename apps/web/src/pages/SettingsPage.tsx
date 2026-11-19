@@ -1,5 +1,6 @@
 import { SalarySection } from '../components/settings/SalarySection';
 import { MethodsSection } from '../components/settings/MethodsSection';
+import { SubscriptionsSection } from '../components/settings/SubscriptionsSection';
 import { TagsSection } from '../components/settings/TagsSection';
 import { btn } from '../components/settings/styles';
 import { useCanWrite } from '../lib/online';
@@ -16,6 +17,7 @@ export function SettingsPage() {
       <SalarySection />
       <MethodsSection />
       <TagsSection />
+      <SubscriptionsSection />
 
       <div>
         <button type="button" onClick={signOut} disabled={!canWrite || signingOut} className={btn}>
