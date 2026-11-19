@@ -10,6 +10,8 @@ const MESSAGES: Record<string, string> = {
   invalid_payment_method: 'Método de pagamento inválido.',
   invalid_body: 'Dados inválidos. Confira os campos.',
   not_found: 'Lançamento não encontrado. Ele pode ter sido excluído.',
+  duplicate_name: 'Já existe um método com esse nome.',
+  payload_too_large: 'Arquivo grande demais (máximo 2 MB).',
   not_monthly: 'Só séries mensais podem ser encerradas.',
 };
 

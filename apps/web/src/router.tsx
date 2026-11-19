@@ -3,9 +3,11 @@ import { Layout } from './components/Layout';
 import { RequireAuth } from './components/RequireAuth';
 import { EntriesPage } from './pages/EntriesPage';
 import { HistoryPage } from './pages/HistoryPage';
+import { ImportPage } from './pages/ImportPage';
 import { LoginPage } from './pages/LoginPage';
 import { PeriodPage } from './pages/PeriodPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -21,8 +23,8 @@ export const router = createBrowserRouter([
       { path: 'ganhos', element: <EntriesPage key="INCOME" kind="INCOME" /> },
       { path: 'historico', element: <HistoryPage /> },
       { path: 'periodo', element: <PeriodPage /> },
-      { path: 'importar', element: <PlaceholderPage title="Importar" /> },
-      { path: 'configuracoes', element: <PlaceholderPage title="Configurações" /> },
+      { path: 'importar', element: <ImportPage /> },
+      { path: 'configuracoes', element: <SettingsPage /> },
       { path: '*', element: <PlaceholderPage title="Página não encontrada" /> },
     ],
   },

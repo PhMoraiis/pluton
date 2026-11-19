@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
-import { authClient, forgetSignedIn } from '../lib/auth-client';
+import { NavLink, Outlet } from 'react-router';
 import { useOnline } from '../lib/online';
-import { clearQueryCache } from '../lib/query';
+import { useSignOut } from '../lib/useSignOut';
 import { OfflineBanner } from './OfflineBanner';
 
 export const NAV_ITEMS = [
@@ -29,21 +27,8 @@ function tabClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function Layout() {
-  const navigate = useNavigate();
   const online = useOnline();
-  const [signingOut, setSigningOut] = useState(false);
-
-  async function signOut() {
-    setSigningOut(true);
-    try {
-      await authClient.signOut();
-    } finally {
-      forgetSignedIn();
-      await clearQueryCache();
-      setSigningOut(false);
-      void navigate('/login', { replace: true });
-    }
-  }
+  const { signOut, signingOut } = useSignOut();
 
   const signOutButton = (
     <button
