@@ -71,9 +71,15 @@ async function createSalary(
 ): Promise<Series> {
   if (input.startMonth < todayMonth) throw new EntryInputError('start_month_in_past');
   const startDay = fromIsoDate(`${input.startMonth}-01`);
-  // Série encerrada ainda com lançamentos a partir do início pedido: contaria em dobro.
+  // Série de salário encerrada que vai até o início pedido, ou que ainda guarda lançamento
+  // (pago ou não) desse mês em diante (encerrada antes de um mês já recebido): contaria em dobro.
   const overlapping = await tx.series.count({
-    where: { userId, role: 'SALARY', endedOn: { gte: startDay } },
+    where: {
+      userId,
+      role: 'SALARY',
+      endedOn: { not: null },
+      OR: [{ endedOn: { gte: startDay } }, { entries: { some: { dueDate: { gte: startDay } } } }],
+    },
   });
   if (overlapping > 0) throw new EntryInputError('overlaps_previous_salary');
 

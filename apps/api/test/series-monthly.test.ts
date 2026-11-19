@@ -36,8 +36,9 @@ async function listMonthly(kind: string, who = cookie): Promise<MonthlySeriesDTO
   return json<MonthlySeriesDTO[]>(res);
 }
 
-function putTags(seriesId: string, body: unknown, who: string | undefined = cookie) {
-  return api(`/api/series/${seriesId}/tags`, { method: 'PUT', body: JSON.stringify(body) }, who);
+/** `who: null` = sem cookie (`undefined` cairia no padrão e mandaria o cookie). */
+function putTags(seriesId: string, body: unknown, who: string | null = cookie) {
+  return api(`/api/series/${seriesId}/tags`, { method: 'PUT', body: JSON.stringify(body) }, who ?? undefined);
 }
 
 async function createTag(name: string): Promise<string> {
@@ -149,7 +150,7 @@ test('PUT /:id/tags: parcelada 400 not_monthly, outra conta 404, sem cookie 401,
     },
   });
   expect((await putTags(foreign.id, { tagIds: [] })).status).toBe(404);
-  expect((await putTags(spotify.seriesId!, { tagIds: [] }, '')).status).toBe(401);
+  expect((await putTags(spotify.seriesId!, { tagIds: [] }, null)).status).toBe(401);
 
   const bad = await putTags(spotify.seriesId!, { tagIds: ['nao-existe'] });
   expect(bad.status).toBe(400);

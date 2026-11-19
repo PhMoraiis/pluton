@@ -269,6 +269,31 @@ test('desativar e reativar: sobreposição com a série encerrada é recusada', 
   ]);
 });
 
+test('reativar recusa sobrepor lançamentos mantidos por um salário encerrado antes deles', async () => {
+  await putSalary(BASE);
+  const months = await byMonth();
+  const pay = await api(
+    `/api/entries/${months['2026-11']!.id}/pay`,
+    { method: 'POST', body: JSON.stringify({ paid: true }) },
+    cookie,
+  );
+  expect(pay.status).toBe(200);
+
+  // Encerrado antes do mês recebido: novembro (pago) continua na série encerrada.
+  const del = await api('/api/salary?lastMonth=2026-10', { method: 'DELETE' }, cookie);
+  expect(del.status).toBe(204);
+  expect((await incomes()).map((e) => [e.dueDate, e.paidOn])).toEqual([['2026-11-30', '2026-11-19']]);
+
+  const overlap = await putSalary({ ...BASE, startMonth: '2026-11' });
+  expect(overlap.status).toBe(400);
+  expect(await json(overlap)).toEqual({ error: 'overlaps_previous_salary' });
+  expect(await activeSalaryCount()).toBe(0);
+
+  const again = await putSalary({ ...BASE, startMonth: '2026-12' });
+  expect(again.status).toBe(200);
+  expect((await incomes()).map((e) => e.dueDate)).toEqual(['2026-11-30', '2026-12-31', '2027-01-31', '2027-02-28']);
+});
+
 test('DELETE sem salário ativo → 404; lastMonth inválido → 400', async () => {
   const none = await api('/api/salary?lastMonth=2026-12', { method: 'DELETE' }, cookie);
   expect(none.status).toBe(404);
