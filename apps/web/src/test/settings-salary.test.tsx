@@ -137,6 +137,10 @@ describe('SettingsPage – Salário', () => {
     expect(screen.getByRole('option', { name: 'Último dia do mês' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Salvar salário' }));
     expect(await within(section()).findByRole('status')).toHaveTextContent('Salário salvo.');
+    // Depois do refetch que traz o salário criado, o status continua visível.
+    await within(section()).findByRole('button', { name: 'Desativar salário' });
+    expect(within(section()).getByRole('status')).toHaveTextContent('Salário salvo.');
+    expect(screen.getByLabelText('Mês de início')).toBeDisabled();
     expect(calls.find((c) => c.method === 'PUT')!.body).toEqual({
       amountCents: 500000,
       dayOfMonth: 31,
@@ -227,5 +231,24 @@ describe('SettingsPage – Salário', () => {
     online = false;
     window.dispatchEvent(new Event('offline'));
     await waitFor(() => expect(screen.getByLabelText('Mês de início')).toBeDisabled());
+  });
+
+  test('salário com dia 31 pré-seleciona "Último dia do mês"', async () => {
+    salary = { seriesId: 's1', amountCents: 450000, dayOfMonth: 31, paymentMethodId: null, startMonth: '2026-08' };
+    renderSettings();
+    await waitFor(() => expect(screen.getByLabelText('Valor estimado')).toHaveValue('4.500,00'));
+    const select = screen.getByLabelText('Dia do pagamento') as HTMLSelectElement;
+    expect(select.selectedOptions[0]).toHaveTextContent('Último dia do mês');
+  });
+
+  test('offline com o modal aberto: mês e Confirmar ficam desabilitados', async () => {
+    salary = { seriesId: 's1', amountCents: 450000, dayOfMonth: 5, paymentMethodId: null, startMonth: '2026-08' };
+    renderSettings();
+    fireEvent.click(await screen.findByRole('button', { name: 'Desativar salário' }));
+    const dialog = await screen.findByRole('dialog');
+    online = false;
+    window.dispatchEvent(new Event('offline'));
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Confirmar' })).toBeDisabled());
+    expect(within(dialog).getByLabelText('Último mês com salário')).toBeDisabled();
   });
 });

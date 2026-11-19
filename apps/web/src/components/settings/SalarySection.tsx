@@ -12,7 +12,15 @@ import { btn, input } from './styles';
 
 const DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
 
-function SalaryForm({ salary, currentMonth }: { salary: SalaryDTO | null; currentMonth: string }) {
+function SalaryForm({
+  salary,
+  currentMonth,
+  onDeactivated,
+}: {
+  salary: SalaryDTO | null;
+  currentMonth: string;
+  onDeactivated: () => void;
+}) {
   const canWrite = useCanWrite();
   const client = useQueryClient();
   const [amount, setAmount] = useState(salary ? centsToInput(salary.amountCents) : '');
@@ -36,6 +44,7 @@ function SalaryForm({ salary, currentMonth }: { salary: SalaryDTO | null; curren
     mutationFn: (month: string) => apiFetch<void>(`/api/salary?${new URLSearchParams({ lastMonth: month })}`, { method: 'DELETE' }),
     onSuccess: async () => {
       setDeactivating(false);
+      onDeactivated();
       await invalidateEntryQueries(client);
     },
   });
@@ -170,6 +179,8 @@ export function SalarySection() {
     queryFn: () => apiFetch<SalaryDTO | null>('/api/salary'),
   });
   const currentMonth = monthKeyOf(todayInSaoPaulo());
+  // Só remonta ao desativar (volta aos padrões); criar não remonta, para o status "Salário salvo." sobreviver ao refetch.
+  const [formKey, setFormKey] = useState(0);
 
   return (
     <section aria-label="Salário" className="flex flex-col gap-3">
@@ -180,8 +191,12 @@ export function SalarySection() {
         </p>
       )}
       {salary.data !== undefined && (
-        // Remonta o formulário quando o salário muda no servidor (criação, desativação).
-        <SalaryForm key={salary.data ? 'active' : 'none'} salary={salary.data} currentMonth={currentMonth} />
+        <SalaryForm
+          key={formKey}
+          salary={salary.data}
+          currentMonth={currentMonth}
+          onDeactivated={() => setFormKey((k) => k + 1)}
+        />
       )}
     </section>
   );
