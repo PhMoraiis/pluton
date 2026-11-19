@@ -2,7 +2,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { ImportPlan, NotionRow, PaymentMethodDTO, PlannedEntry } from '@pluton/shared';
+import type { ImportPlan, NotionRow, PaymentMethodDTO, PlannedEntry, TagDTO } from '@pluton/shared';
 
 const sessionState = vi.hoisted(() => ({ data: { user: { id: 'u1' }, session: { id: 's1' } } as unknown }));
 const signOutSpy = vi.hoisted(() => vi.fn(async () => undefined));
@@ -49,6 +49,7 @@ const presente: NotionRow = {
 };
 
 let methods: PaymentMethodDTO[];
+let tags: TagDTO[];
 let calls: Array<{ method: string; path: string; body: Record<string, unknown> | null }>;
 let online: boolean;
 let nextPlan: ((body: Record<string, unknown>) => ImportPlan) | null;
@@ -154,6 +155,17 @@ const methodBody = (b: Record<string, unknown> | null) =>
   typeof b['color'] === 'string' &&
   /^#[0-9A-Fa-f]{6}$/.test(b['color']);
 
+function tagBody(b: Record<string, unknown> | null): boolean {
+  return (
+    !!b &&
+    typeof b['name'] === 'string' &&
+    b['name'].trim().length >= 1 &&
+    b['name'].trim().length <= 40 &&
+    typeof b['color'] === 'string' &&
+    /^#[0-9A-Fa-f]{6}$/.test(b['color'])
+  );
+}
+
 function mockFetch() {
   vi.stubGlobal(
     'fetch',
@@ -200,6 +212,35 @@ function mockFetch() {
           return new Response(null, { status: 204 });
         }
       }
+      if (url.pathname === '/api/tags') {
+        if (method === 'GET') return json(tags);
+        if (method === 'POST') {
+          if (!tagBody(body)) return bad();
+          const name = (body!['name'] as string).trim();
+          if (tags.some((t) => t.name.toLowerCase() === name.toLowerCase())) return json({ error: 'duplicate_name' }, 409);
+          const created: TagDTO = { id: `t-${name}`, name, color: body!['color'] as string, sortOrder: tags.length, system: null };
+          tags = [...tags, created];
+          return json(created, 201);
+        }
+      }
+      const oneTag = /^\/api\/tags\/([^/]+)$/.exec(url.pathname);
+      if (oneTag) {
+        const id = oneTag[1]!;
+        const tag = tags.find((t) => t.id === id);
+        if (!tag) return json({ error: 'not_found' }, 404);
+        if (method === 'PATCH') {
+          if (!tagBody(body)) return bad();
+          const name = (body!['name'] as string).trim();
+          if (tags.some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) return json({ error: 'duplicate_name' }, 409);
+          tags = tags.map((t) => (t.id === id ? { ...t, name, color: body!['color'] as string } : t));
+          return json(tags.find((t) => t.id === id));
+        }
+        if (method === 'DELETE') {
+          if (tag.system) return json({ error: 'system_tag' }, 409);
+          tags = tags.filter((t) => t.id !== id);
+          return new Response(null, { status: 204 });
+        }
+      }
       return new Response('not found', { status: 404 });
     }),
   );
@@ -226,6 +267,10 @@ async function upload(file: File) {
 }
 
 beforeEach(() => {
+  tags = [
+    { id: 't-sub', name: 'Assinatura', color: '#D9730D', sortOrder: 0, system: 'SUBSCRIPTION' },
+    { id: 't-stream', name: 'Streaming', color: '#0B6E99', sortOrder: 1, system: null },
+  ];
   methods = [{ id: 'm-pix', name: 'Pix', color: '#0B6E99', sortOrder: 0 }];
   calls = [];
   online = true;
@@ -358,7 +403,7 @@ describe('SettingsPage', () => {
     renderWith(<SettingsPage />);
     await screen.findByText('Pix');
     fireEvent.change(screen.getByLabelText('Nome do método'), { target: { value: ' PicPay ' } });
-    fireEvent.click(screen.getByRole('radio', { name: 'Verde' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Métodos de pagamento' })).getByRole('radio', { name: 'Verde' }));
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
     await screen.findByText('PicPay');
     const post = calls.find((c) => c.method === 'POST')!;
@@ -415,5 +460,70 @@ describe('SettingsPage', () => {
     await screen.findByText('Pix');
     fireEvent.click(screen.getByRole('button', { name: 'Sair' }));
     await waitFor(() => expect(signOutSpy).toHaveBeenCalled());
+  });
+});
+
+describe('SettingsPage – Etiquetas', () => {
+  const section = () => screen.getByRole('region', { name: 'Etiquetas' });
+
+  test('criar "Lazer" envia POST e aparece na lista', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Streaming');
+    fireEvent.change(screen.getByLabelText('Nome da etiqueta'), { target: { value: ' Lazer ' } });
+    fireEvent.click(within(section()).getByRole('radio', { name: 'Verde' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar etiqueta' }));
+    await within(section()).findByText('Lazer');
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/api/tags')!.body).toEqual({
+      name: 'Lazer',
+      color: '#0F7B6C',
+    });
+  });
+
+  test('nome duplicado com outra caixa mostra mensagem', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Streaming');
+    fireEvent.change(screen.getByLabelText('Nome da etiqueta'), { target: { value: 'assinatura' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar etiqueta' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Já existe uma etiqueta com esse nome.');
+  });
+
+  test('etiqueta de sistema não tem Excluir e mostra a legenda; a outra exclui com confirmação', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Streaming');
+    expect(screen.getByText('Usada na tela Assinaturas')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Excluir Assinatura' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir Streaming' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Os lançamentos com esta etiqueta ficarão sem ela.')).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Excluir' }));
+    await waitFor(() => expect(within(section()).queryByText('Streaming')).not.toBeInTheDocument());
+    expect(calls.some((c) => c.method === 'DELETE' && c.path === '/api/tags/t-stream')).toBe(true);
+  });
+
+  test('renomear "Assinatura" envia PATCH', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Streaming');
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Assinatura' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Nome da etiqueta'), { target: { value: 'Assinaturas' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await within(section()).findByText('Assinaturas');
+    expect(calls.find((c) => c.method === 'PATCH' && c.path === '/api/tags/t-sub')!.body).toEqual({
+      name: 'Assinaturas',
+      color: '#D9730D',
+    });
+  });
+
+  test('offline: campos e botões da seção ficam desabilitados', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Streaming');
+    online = false;
+    window.dispatchEvent(new Event('offline'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Adicionar etiqueta' })).toBeDisabled());
+    expect(screen.getByLabelText('Nome da etiqueta')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Editar Assinatura' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Excluir Streaming' })).toBeDisabled();
+    for (const r of within(section()).getAllByRole('radio')) expect(r).toBeDisabled();
   });
 });
