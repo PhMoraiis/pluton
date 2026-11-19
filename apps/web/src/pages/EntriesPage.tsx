@@ -119,7 +119,9 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
     });
   }
 
-  const loadError = entries.error ?? defaultMonth.error;
+  // Dados em cache sempre aparecem; erro só quando a consulta não tem dado algum.
+  const loadError = !entries.data && (entries.error ?? (explicit === null && !defaultMonth.data ? defaultMonth.error : null));
+  const stale = [entries, overdue, summary, methodsQuery, defaultMonth].some((q) => q.isError && q.data !== undefined);
   const title = kind === 'EXPENSE' ? 'despesas' : 'ganhos';
 
   return (
@@ -133,7 +135,20 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
         />
       )}
 
-      {month && <SummaryBar summary={summary.data} />}
+      {month &&
+        (summary.data || !summary.isError ? (
+          <SummaryBar summary={summary.data} />
+        ) : (
+          <p role="alert" className="text-sm text-danger">
+            Não foi possível carregar o resumo.
+          </p>
+        ))}
+
+      {overdue.isError && !overdue.data && (
+        <p role="alert" className="text-sm text-danger">
+          Não foi possível carregar os atrasados.
+        </p>
+      )}
 
       {overdueRows.length > 0 && (
         <section aria-label="Atrasados" className="rounded-lg border border-danger/40 p-2">
@@ -167,6 +182,12 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
           </div>
         )}
       </div>
+
+      {stale && (
+        <p role="status" className="text-xs text-muted">
+          Mostrando dados salvos
+        </p>
+      )}
 
       {loadError ? (
         <p role="alert" className="text-sm text-danger">

@@ -15,8 +15,8 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <EntriesPage kind="EXPENSE" /> },
-      { path: 'ganhos', element: <EntriesPage kind="INCOME" /> },
+      { index: true, element: <EntriesPage key="EXPENSE" kind="EXPENSE" /> },
+      { path: 'ganhos', element: <EntriesPage key="INCOME" kind="INCOME" /> },
       { path: 'historico', element: <PlaceholderPage title="Histórico" /> },
       { path: 'periodo', element: <PlaceholderPage title="Período" /> },
       { path: 'importar', element: <PlaceholderPage title="Importar" /> },

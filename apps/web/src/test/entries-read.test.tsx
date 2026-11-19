@@ -3,10 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { EntryDTO, EntryKind, PaymentMethodDTO, Summary } from '@pluton/shared';
+import { queryKeys } from '../lib/queryKeys';
 import { EntriesPage } from '../pages/EntriesPage';
 
 // O Testing Library normaliza U+00A0 (saída de formatBRL) para espaço comum ao casar texto.
-const NBSP = " ";
+const SP = ' ';
 
 const methods: PaymentMethodDTO[] = [
   { id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 },
@@ -38,6 +39,7 @@ interface Server {
 
 let server: Server;
 let requested: string[];
+let failing: Set<string>;
 
 function mockFetch() {
   vi.stubGlobal(
@@ -47,6 +49,7 @@ function mockFetch() {
       requested.push(url.pathname + url.search);
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (failing.has(url.pathname)) return new Response('boom', { status: 500 });
       switch (url.pathname) {
         case '/api/entries':
           return json(server.entries);
@@ -78,8 +81,11 @@ function setViewport(desktop: boolean) {
   }));
 }
 
-function renderPage(kind: EntryKind = 'EXPENSE', url = '/') {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+function renderPage(
+  kind: EntryKind = 'EXPENSE',
+  url = '/',
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[url]}>
@@ -91,6 +97,7 @@ function renderPage(kind: EntryKind = 'EXPENSE', url = '/') {
 
 beforeEach(() => {
   requested = [];
+  failing = new Set();
   server = {
     entries: [],
     overdue: [],
@@ -113,7 +120,7 @@ describe('EntriesPage (leitura)', () => {
     renderPage();
 
     expect(await screen.findByText('Fone 3/7')).toBeInTheDocument();
-    expect(screen.getByText(`R$${NBSP}42,90`)).toBeInTheDocument();
+    expect(screen.getByText(`R$${SP}42,90`)).toBeInTheDocument();
     expect(screen.getByText('5 de dezembro de 2026')).toBeInTheDocument();
     expect(requested).toContain('/api/entries?kind=EXPENSE&from=2026-12&to=2026-12&status=pending');
   });
@@ -125,7 +132,7 @@ describe('EntriesPage (leitura)', () => {
     renderPage();
 
     expect(await screen.findByText('Fone 3/7')).toBeInTheDocument();
-    expect(screen.getByText(`R$${NBSP}42,90`)).toBeInTheDocument();
+    expect(screen.getByText(`R$${SP}42,90`)).toBeInTheDocument();
     expect(screen.getByText('5 de dezembro de 2026')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /Fone 3\/7/ })).toBeDisabled();
@@ -201,7 +208,7 @@ describe('EntriesPage (leitura)', () => {
 
     renderPage();
 
-    expect(await screen.findByText(`R$${NBSP}3.000,00`)).toBeInTheDocument();
+    expect(await screen.findByText(`R$${SP}3.000,00`)).toBeInTheDocument();
     const bar = screen.getByLabelText('Resumo do mês');
     expect(within(bar).getByText('Despesas')).toBeInTheDocument();
     expect(within(bar).getByText('Ganhos')).toBeInTheDocument();
@@ -212,5 +219,30 @@ describe('EntriesPage (leitura)', () => {
   test('ganhos usam kind=INCOME', async () => {
     renderPage('INCOME');
     await waitFor(() => expect(requested.some((r) => r.startsWith('/api/entries?kind=INCOME'))).toBe(true));
+  });
+
+  test('com dados em cache e refetch falhando (offline), mostra a lista salva e o rodapé', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    client.setQueryData(queryKeys.entries({ kind: 'EXPENSE', from: '2026-12', to: '2026-12', status: 'pending' }), [
+      entry({ id: 'e1', displayName: 'Obra', amountCents: 171096, dueDate: '2026-12-05' }),
+    ]);
+    client.setQueryData(queryKeys.defaultMonth('EXPENSE'), { month: '2026-12' });
+    failing = new Set(['/api/entries', '/api/default-month', '/api/summary', '/api/entries/overdue', '/api/payment-methods']);
+
+    renderPage('EXPENSE', '/', client);
+
+    expect(await screen.findByText('Obra')).toBeInTheDocument();
+    expect(await screen.findByText('Mostrando dados salvos')).toBeInTheDocument();
+    expect(screen.getByTestId('entries-footer')).toHaveTextContent('CONTAGEM 1');
+    expect(screen.queryByText('Não foi possível carregar os lançamentos.')).not.toBeInTheDocument();
+  });
+
+  test('falha ao carregar atrasados e resumo sem dados mostra aviso em vez de sumir', async () => {
+    failing = new Set(['/api/entries/overdue', '/api/summary']);
+
+    renderPage();
+
+    expect(await screen.findByText('Não foi possível carregar os atrasados.')).toBeInTheDocument();
+    expect(await screen.findByText('Não foi possível carregar o resumo.')).toBeInTheDocument();
   });
 });
