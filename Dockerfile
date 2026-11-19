@@ -16,7 +16,8 @@ ENV CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1
 WORKDIR /repo
 
 # Manifestos primeiro para reaproveitar o cache da instalação.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# .pnpmfile.cjs entra no checksum do lockfile (remove peers opcionais não usados).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
@@ -59,4 +60,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 
 # Migrações versionadas antes de subir (nunca apagam dados).
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && exec node dist/server.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && exec node --enable-source-maps dist/server.js"]

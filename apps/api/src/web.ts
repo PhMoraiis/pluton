@@ -61,7 +61,9 @@ export function serveWeb(app: Hono, root: string): void {
   app.use('*', async (c, next) => {
     await next();
     if (isApiPath(c.req.path) || !c.res.ok) return;
-    c.header('Cache-Control', c.req.path.startsWith('/assets/') ? IMMUTABLE : NO_CACHE);
+    // Cache longo só para arquivos com hash em /assets (nunca para o fallback do SPA).
+    const hashedAsset = c.req.path.startsWith('/assets/') && looksLikeFile(c.req.path);
+    c.header('Cache-Control', hashedAsset ? IMMUTABLE : NO_CACHE);
   });
   app.use('*', serveStatic({ root }));
 

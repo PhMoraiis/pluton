@@ -6,14 +6,24 @@ import { INITIAL_PAYMENT_METHODS } from './payment-method-defaults';
 
 /**
  * Opções `advanced` do Better Auth. Em produção o app fica atrás do Traefik do
- * Dokploy, que descarta os X-Forwarded-For/X-Real-Ip vindos do cliente e grava
- * o IP real: o rate limit passa a ser por IP do cliente, não um balde único.
- * Header com mais de um IP é ignorado pelo Better Auth (sem `trustedProxies`).
- * Cookies `Secure` em produção (HTTPS obrigatório).
+ * Dokploy, que descarta o X-Forwarded-For vindo do cliente e grava o IP real
+ * (sem `forwardedHeaders.insecure`): o rate limit passa a ser por IP do cliente,
+ * não um balde único. Header com mais de um IP é ignorado pelo Better Auth, a
+ * menos que `trustedProxies` liste os proxies que o anexaram — use
+ * `BETTER_AUTH_TRUSTED_PROXIES` (IPs/CIDRs separados por vírgula) só se o
+ * Traefik estiver configurado para confiar nesses proxies (ex.: faixas da
+ * Cloudflare em `forwardedHeaders.trustedIPs`). Cookies `Secure` em produção.
  */
-export function authAdvancedOptions(nodeEnv: string | undefined) {
+export function authAdvancedOptions(nodeEnv: string | undefined, trustedProxies?: string) {
+  const proxies = (trustedProxies ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
   return {
-    ipAddress: { ipAddressHeaders: ['x-forwarded-for', 'x-real-ip'] },
+    ipAddress: {
+      ipAddressHeaders: ['x-forwarded-for'],
+      ...(proxies.length > 0 && { trustedProxies: proxies }),
+    },
     useSecureCookies: nodeEnv === 'production',
   };
 }
@@ -22,7 +32,7 @@ export function authAdvancedOptions(nodeEnv: string | undefined) {
 // origem do PWA e da API); em dev `http://localhost:5173` (proxy do Vite).
 export const auth = betterAuth({
   basePath: '/api/auth',
-  advanced: authAdvancedOptions(process.env.NODE_ENV),
+  advanced: authAdvancedOptions(process.env.NODE_ENV, process.env.BETTER_AUTH_TRUSTED_PROXIES),
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   emailAndPassword: { enabled: true },
   // Rate limit padrão do Better Auth (janela/limites default, storage em memória),

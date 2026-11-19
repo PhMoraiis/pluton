@@ -13,7 +13,7 @@ Exemplo de domínio usado aqui: `finances.philipemorais.com` (troque pelo seu).
 - Em `NODE_ENV=production` o servidor serve o PWA: arquivos estáticos, fallback do SPA (`/historico`, `/periodo`... devolvem o `index.html`), e a API sob `/api`. Rota inexistente da API → `404` em JSON.
 - `GET /api/health` → `{ "ok": true }` (sem autenticação, sem tocar no banco). A imagem já declara um `HEALTHCHECK` nessa rota.
 - Cabeçalhos de segurança em todas as respostas: CSP estrita (`default-src 'self'`, sem script/estilo inline, `object-src 'none'`, `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, HSTS.
-- Better Auth: cookies `Secure` em produção; rate limit por IP do cliente lido de `X-Forwarded-For`/`X-Real-Ip`, que o Traefik reescreve com o IP real.
+- Better Auth: cookies `Secure` em produção; rate limit por IP do cliente lido de `X-Forwarded-For`, que o Traefik reescreve com o IP real (veja [Proxy e IP do cliente](#proxy-e-ip-do-cliente)).
 
 ## Variáveis de ambiente
 
@@ -24,6 +24,7 @@ Exemplo de domínio usado aqui: `finances.philipemorais.com` (troque pelo seu).
 | `BETTER_AUTH_URL` | obrigatória | URL pública, sem barra no final: `https://finances.philipemorais.com` |
 | `PORT` | `3000` (padrão da imagem) | Porta interna do container |
 | `NODE_ENV` | `production` (padrão da imagem) | Liga o PWA estático e os cookies seguros |
+| `BETTER_AUTH_TRUSTED_PROXIES` | opcional | IPs/CIDRs separados por vírgula dos proxies que o Traefik foi configurado para confiar (ex.: faixas da Cloudflare). Veja [Proxy e IP do cliente](#proxy-e-ip-do-cliente) |
 | `WEB_DIST_DIR` | opcional | Só se mudar o local do build do PWA (padrão `apps/web/dist`) |
 | `DATABASE_URL_TEST` | não usar | Só para a suíte de testes local da API |
 
@@ -34,7 +35,7 @@ No provedor de DNS do domínio, crie um registro `A` (e `AAAA`, se a VPS tiver I
 Se o domínio estiver na **Cloudflare**:
 
 - Deixe o registro como **DNS only** (nuvem cinza) até o Dokploy emitir o certificado Let's Encrypt (passo 3). Depois, se quiser o proxy (nuvem laranja), ative-o e configure **SSL/TLS → Full (strict)**. Nunca use `Flexible`.
-- Com o proxy ligado, o Traefik enxerga o IP da Cloudflare, não o do cliente: o rate limit do login passa a ser por servidor de borda da Cloudflare (ainda funciona, só fica menos preciso). Sem proxy, é por IP do cliente.
+- Com o proxy ligado, o rate limit do login muda de comportamento — veja [Proxy e IP do cliente](#proxy-e-ip-do-cliente).
 
 ## 2. Banco Postgres no Dokploy
 
@@ -98,7 +99,11 @@ Backup que nunca foi restaurado não é backup. Depois do primeiro backup com da
    ```
 
 2. Crie um Postgres **temporário** no Dokploy (ex.: `pluton-restore-test`, banco `pluton`).
-3. Restaure o último backup do R2 nesse banco temporário (Backups → **Restore**, escolhendo o banco temporário como alvo). Alternativa manual: baixe o arquivo do R2 e rode `gunzip -c <arquivo>.sql.gz | psql -U <usuário> -d pluton` no banco temporário.
+3. Restaure o último backup do R2 nesse banco temporário (Backups → **Restore**, escolhendo o banco temporário como alvo). Alternativa manual: os backups do Dokploy são `pg_dump -Fc` (formato custom) comprimido com gzip, então baixe o arquivo do R2 e, no banco **temporário**, rode:
+
+   ```bash
+   gunzip -c <arquivo>.sql.gz | pg_restore -U <usuário> -d <banco_temporário> --no-owner --no-acl
+   ```
 4. Rode a mesma contagem no banco temporário: deve bater com a do passo 1 (descontando lançamentos criados depois do backup).
 5. Apague o banco temporário.
 
@@ -117,6 +122,21 @@ Nunca restaure por cima do banco de produção para "testar".
 - **Mac:** abra no Safari → **Arquivo** → **Adicionar ao Dock**.
 
 Sem conexão, o app abre com os últimos dados carregados, em modo **somente leitura**.
+
+## Proxy e IP do cliente
+
+O rate limit do login (Better Auth) é por IP do cliente, lido do `X-Forwarded-For`. Isso só é confiável porque o Traefik do Dokploy, na configuração padrão, **descarta** o `X-Forwarded-For` enviado pelo cliente e grava o IP de quem abriu a conexão.
+
+- **Nunca** ligue `forwardedHeaders.insecure` no Traefik: qualquer cliente poderia forjar o IP e escapar do rate limit trocando o header.
+- Não publique a porta 3000 fora do Traefik (passo 3.7).
+- O Better Auth ignora um `X-Forwarded-For` com mais de um IP, a não ser que `BETTER_AUTH_TRUSTED_PROXIES` liste os proxies que anexaram os IPs extras.
+
+**Sem proxy da Cloudflare (nuvem cinza):** nada a configurar; o rate limit é por IP do cliente.
+
+**Com proxy da Cloudflare (nuvem laranja)**, há dois caminhos:
+
+1. **Não fazer nada.** O Traefik vê o IP do servidor de borda da Cloudflare e o grava no `X-Forwarded-For`. O rate limit passa a ser por servidor de borda: clientes diferentes que caem no mesmo servidor de borda dividem o mesmo balde (um atacante pode esgotar o limite de login de quem estiver no mesmo servidor de borda por alguns segundos, e o limite fica menos preciso). Para uma conta única, é aceitável.
+2. **IP real do cliente.** No Traefik do Dokploy, configure o entrypoint HTTPS com `forwardedHeaders.trustedIPs` contendo as faixas publicadas pela Cloudflare (https://www.cloudflare.com/ips/), para o Traefik preservar o `X-Forwarded-For` que a Cloudflare envia. Depois, na aplicação, defina `BETTER_AUTH_TRUSTED_PROXIES` com **as mesmas faixas**, separadas por vírgula. O Better Auth percorre a cadeia da direita para a esquerda, pula os proxies confiáveis e usa o primeiro IP não confiável (o do cliente). Mantenha as duas listas iguais e atualizadas; um proxy confiável a mais permite forjar o IP.
 
 ## Verificação local da imagem (opcional)
 

@@ -43,6 +43,7 @@ O `.env` da raiz é lido pela API (`tsx --env-file-if-exists`) e pelo `prisma.co
 | `BETTER_AUTH_URL` | `http://localhost:5173` | `https://finances.philipemorais.com` |
 | `PORT` | `3000` | `3000` (padrão da imagem) |
 | `NODE_ENV` | `development` | `production` (padrão da imagem) |
+| `BETTER_AUTH_TRUSTED_PROXIES` | — | opcional; veja [docs/deploy.md](docs/deploy.md#proxy-e-ip-do-cliente) |
 | `DATABASE_URL_TEST` | opcional; padrão `postgresql://postgres:postgres@localhost:5433/pluton_test` | — |
 
 ## Testes

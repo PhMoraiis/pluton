@@ -63,6 +63,13 @@ describe('servindo o PWA em produção', () => {
     expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
   });
 
+  test('fallback do SPA sob /assets sem extensão não ganha cache longo', async () => {
+    const res = await app.request('/assets/rota');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('pluton-index');
+    expect(res.headers.get('cache-control')).toBe('no-cache');
+  });
+
   test('service worker é servido sem cache', async () => {
     const res = await app.request('/sw.js');
     expect(res.status).toBe(200);
@@ -113,11 +120,17 @@ describe('sem dist (dev/teste)', () => {
 });
 
 describe('Better Auth atrás do Traefik', () => {
-  test('rate limit usa o IP do cliente vindo do proxy', () => {
-    expect(authAdvancedOptions('production').ipAddress?.ipAddressHeaders).toEqual([
-      'x-forwarded-for',
-      'x-real-ip',
-    ]);
+  test('rate limit usa o IP do cliente vindo do proxy (X-Forwarded-For do Traefik)', () => {
+    const ip = authAdvancedOptions('production').ipAddress;
+    expect(ip.ipAddressHeaders).toEqual(['x-forwarded-for']);
+    expect(ip).not.toHaveProperty('trustedProxies');
+  });
+
+  test('proxies confiáveis opcionais (ex.: Cloudflare) vêm de lista separada por vírgula', () => {
+    expect(authAdvancedOptions('production', ' 173.245.48.0/20, 2400:cb00::/32 ,').ipAddress).toEqual({
+      ipAddressHeaders: ['x-forwarded-for'],
+      trustedProxies: ['173.245.48.0/20', '2400:cb00::/32'],
+    });
   });
 
   test('cookies seguros só em produção', () => {
