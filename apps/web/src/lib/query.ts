@@ -10,12 +10,16 @@ function hasStatus(error: unknown): error is { status: number } {
 
 /**
  * `gcTime` ≥ `maxAge` do persister, senão as queries somem antes de serem
- * restauradas. `offlineFirst` deixa o cache aparecer sem conexão (somente leitura).
+ * restauradas. Tem de ser `Infinity` (GC desligado): qualquer valor acima de
+ * 2^31-1 ms (~24,8 dias) estoura o `setTimeout` e o GC roda em ~1 ms, apagando o
+ * cache restaurado antes de as telas montarem — offline ficaria sem dados. A
+ * validade do cache persistido continua limitada pelo `maxAge` (30 dias).
+ * `offlineFirst` deixa o cache aparecer sem conexão (somente leitura).
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      gcTime: THIRTY_DAYS_MS,
+      gcTime: Infinity,
       staleTime: 30_000,
       networkMode: 'offlineFirst',
       // Erros 4xx (incluindo 401) não melhoram com nova tentativa.

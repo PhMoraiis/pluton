@@ -1,5 +1,10 @@
 import { MutationObserver, onlineManager } from '@tanstack/react-query';
-import { type PersistedClient, type Persister, persistQueryClientSave } from '@tanstack/react-query-persist-client';
+import {
+  type PersistedClient,
+  type Persister,
+  persistQueryClientRestore,
+  persistQueryClientSave,
+} from '@tanstack/react-query-persist-client';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { persistOptions, queryClient } from '../lib/query';
 
@@ -59,5 +64,52 @@ describe('offline = somente leitura (nada é enfileirado)', () => {
     });
 
     expect(saved?.clientState.mutations).toEqual([]);
+  });
+});
+
+describe('cache persistido (leitura offline)', () => {
+  test('dados restaurados continuam no cache até as telas montarem', async () => {
+    // Persistido "agora", com uma query de sucesso e nenhum observer (o app ainda
+    // está checando a sessão quando a restauração termina).
+    const now = Date.now();
+    const persisted: PersistedClient = {
+      buster: persistOptions.buster ?? '',
+      timestamp: now,
+      clientState: {
+        mutations: [],
+        queries: [
+          {
+            queryKey: ['payment-methods'],
+            queryHash: '["payment-methods"]',
+            dehydratedAt: now,
+            state: {
+              data: [{ id: 'm1' }],
+              dataUpdateCount: 1,
+              dataUpdatedAt: now,
+              error: null,
+              errorUpdateCount: 0,
+              errorUpdatedAt: 0,
+              fetchFailureCount: 0,
+              fetchFailureReason: null,
+              fetchMeta: null,
+              isInvalidated: false,
+              status: 'success',
+              fetchStatus: 'idle',
+            },
+          },
+        ],
+      },
+    };
+    const memoryPersister: Persister = {
+      persistClient: () => {},
+      restoreClient: () => persisted,
+      removeClient: () => {},
+    };
+
+    await persistQueryClientRestore({ ...persistOptions, persister: memoryPersister, queryClient });
+    // gcTime acima de 2^31-1 ms estoura o setTimeout e o GC roda em ~1 ms.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(queryClient.getQueryData(['payment-methods'])).toEqual([{ id: 'm1' }]);
   });
 });
