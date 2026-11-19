@@ -1,4 +1,4 @@
-import type { DeleteScope, EditScope, EntryDTO, EntryKind, PaymentMethodDTO } from '@pluton/shared';
+import type { DeleteScope, EditScope, EntryDTO, EntryKind, PaymentMethodDTO, TagDTO } from '@pluton/shared';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { draftFromEntry, draftToPatch, type EntryDraft } from '../lib/entryDraft';
 import {
@@ -17,6 +17,7 @@ import { UndoToast } from './UndoToast';
 export interface EntryActionsValue {
   canWrite: boolean;
   methods: Map<string, PaymentMethodDTO>;
+  tags: Map<string, TagDTO>;
   /** Salva um patch; em série pergunta antes `Só esta` / `Esta e as próximas`. */
   edit: (entry: EntryDTO, patch: EntryPatch) => void;
   /** Abre o formulário completo do lançamento. */
@@ -52,11 +53,12 @@ interface Props {
   kind: EntryKind;
   canWrite: boolean;
   methods: Map<string, PaymentMethodDTO>;
+  tags: Map<string, TagDTO>;
   children: ReactNode;
 }
 
 /** Ações de escrita dos lançamentos + diálogos, toast de desfazer e mensagens de erro. */
-export function EntryActionsProvider({ kind, canWrite, methods, children }: Props) {
+export function EntryActionsProvider({ kind, canWrite, methods, tags, children }: Props) {
   const update = useUpdateEntry();
   const del = useDeleteEntry();
   const pay = usePayEntry();
@@ -89,6 +91,7 @@ export function EntryActionsProvider({ kind, canWrite, methods, children }: Prop
   const value: EntryActionsValue = {
     canWrite,
     methods,
+    tags,
     edit(entry, patch) {
       if (!canWrite || Object.keys(patch).length === 0) return;
       if (entry.seriesId) setEditing({ entry, patch });

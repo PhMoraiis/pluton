@@ -14,6 +14,7 @@ import { EditableCell } from './EditableCell';
 import { useEntryActions } from './EntryActions';
 import { KindIcon } from './KindIcon';
 import { MethodTag } from './MethodTag';
+import { TagChips } from './TagChips';
 import { RowActions } from './RowActions';
 
 /*
@@ -103,6 +104,11 @@ function MethodCell({ entry }: { entry: EntryDTO }) {
   );
 }
 
+function TagsCell({ entry }: { entry: EntryDTO }) {
+  const { tags } = useEntryActions();
+  return <TagChips tagIds={entry.tagIds} tags={tags} empty />;
+}
+
 function PaidCell({ entry }: { entry: EntryDTO }) {
   const { canWrite, setPaid } = useEntryActions();
   return (
@@ -131,6 +137,7 @@ const columns = [
     meta: { sortKey: 'metodo' as SortKey },
     cell: (c) => <MethodCell entry={c.row.original} />,
   }),
+  col.display({ id: 'tags', header: 'Etiquetas', cell: (c) => <TagsCell entry={c.row.original} /> }),
   col.accessor('paidOn', { header: 'Pago', cell: (c) => <PaidCell entry={c.row.original} /> }),
   col.display({
     id: 'actions',
@@ -176,7 +183,7 @@ export function EntriesTable({ rows, overdue = false, caption, footerRow, emptyM
               const title = flexRender(h.column.columnDef.header, h.getContext());
               if (!onSort || !sortKey) {
                 return (
-                  <th key={h.id} className="px-2 py-1.5 font-normal">
+                  <th key={h.id} className={`px-2 py-1.5 font-normal${right ? ' block text-right' : ''}`}>
                     {title}
                   </th>
                 );

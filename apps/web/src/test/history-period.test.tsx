@@ -2,7 +2,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { EntryDTO, PaymentMethodDTO, Summary } from '@pluton/shared';
+import type { EntryDTO, PaymentMethodDTO, Summary, TagDTO } from '@pluton/shared';
 
 const sessionState = vi.hoisted(() => ({ data: { user: { id: 'u1' }, session: { id: 's1' } } as unknown }));
 vi.mock('../lib/auth-client', async (importOriginal) => {
@@ -21,6 +21,8 @@ import { PeriodPage } from '../pages/PeriodPage';
 // O Testing Library normaliza U+00A0 (saída de formatBRL) para espaço comum ao casar texto.
 const SP = ' ';
 const methods: PaymentMethodDTO[] = [{ id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 }];
+
+const tags: TagDTO[] = [{ id: 't-sub', name: 'Assinatura', color: '#D9730D', sortOrder: 0, system: 'SUBSCRIPTION' }];
 
 function entry(over: Partial<EntryDTO> & Pick<EntryDTO, 'id' | 'displayName' | 'amountCents' | 'dueDate'>): EntryDTO {
   return {
@@ -66,6 +68,7 @@ function mockFetch() {
         return json(summary);
       }
       if (url.pathname === '/api/payment-methods') return json(methods);
+      if (url.pathname === '/api/tags') return json(tags);
       if (/^\/api\/entries\/[^/]+\/pay$/.test(url.pathname)) return json(entries[0]);
       return new Response('not found', { status: 404 });
     }),
@@ -142,6 +145,13 @@ describe('HistoryPage', () => {
     const dez = await screen.findByRole('region', { name: 'dez. de 2026' });
     expect(within(dez).getByText('Seguro')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'nov. de 2026' })).queryByText('Seguro')).not.toBeInTheDocument();
+  });
+
+  test('mostra o chip da etiqueta no cartão do histórico', async () => {
+    entries = [entry({ id: 'x', displayName: 'Netflix', amountCents: 5000, dueDate: '2026-11-05', paidOn: '2026-11-05', tagIds: ['t-sub'] })];
+    renderWith(<HistoryPage />);
+    const card = (await screen.findByText('Netflix')).closest('li')!;
+    expect(await within(card).findByText('Assinatura')).toBeInTheDocument();
   });
 
   test('desmarcar pago envia pay { paid: false }', async () => {

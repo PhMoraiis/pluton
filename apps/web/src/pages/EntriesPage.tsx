@@ -6,6 +6,7 @@ import {
   type EntryKind,
   type MonthKey,
   type PaymentMethodDTO,
+  type TagDTO,
   type Summary,
 } from '@pluton/shared';
 import { useMemo, useState } from 'react';
@@ -85,6 +86,12 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
     queryFn: () => apiFetch<PaymentMethodDTO[]>('/api/payment-methods'),
   });
   const methodList = methodsQuery.data;
+  const tagsQuery = useQuery({
+    queryKey: queryKeys.tags(),
+    queryFn: () => apiFetch<TagDTO[]>('/api/tags'),
+  });
+  const tagList = tagsQuery.data;
+  const tags = useMemo(() => new Map((tagList ?? []).map((t) => [t.id, t])), [tagList]);
   const canWrite = useCanWrite();
   const desktop = useIsDesktop();
   const methods = useMemo(() => new Map((methodList ?? []).map((m) => [m.id, m])), [methodList]);
@@ -93,7 +100,11 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
   const sort = parseSort(sortParam);
 
   const [methodFilter, setMethodFilter] = useState<ReadonlySet<string>>(new Set());
+  const [tagFilter, setTagFilter] = useState<ReadonlySet<string>>(new Set());
   const [search, setSearch] = useState('');
+
+  // Etiquetas excluídas (em outra aba/dispositivo) saem do filtro; se nada sobra, não filtra.
+  const activeTags = useMemo(() => new Set([...tagFilter].filter((id) => tags.has(id))), [tagFilter, tags]);
 
   const overdueRows = overdue.data ?? [];
   const rows = useMemo(() => {
@@ -103,10 +114,11 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
       (e) =>
         !overdueIds.has(e.id) &&
         (methodFilter.size === 0 || (e.paymentMethodId != null && methodFilter.has(e.paymentMethodId))) &&
+        (activeTags.size === 0 || e.tagIds.some((id) => activeTags.has(id))) &&
         (needle === '' || e.displayName.toLocaleLowerCase('pt-BR').includes(needle)),
     );
     return sortEntries(filtered, parseSort(sortParam), methods);
-  }, [entries.data, overdue.data, methodFilter, search, sortParam, methods]);
+  }, [entries.data, overdue.data, methodFilter, activeTags, search, sortParam, methods]);
 
   function selectMonth(next: MonthSelection) {
     setParams(
@@ -139,15 +151,23 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
     });
   }
 
+  function toggleTag(id: string) {
+    setTagFilter((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
   // Dados em cache sempre aparecem; erro só quando a consulta não tem dado algum.
   const loadError = !entries.data && (entries.error ?? (explicit === null && !defaultMonth.data ? defaultMonth.error : null));
-  const stale = [entries, overdue, summary, methodsQuery, defaultMonth].some((q) => q.isError && q.data !== undefined);
+  const stale = [entries, overdue, summary, methodsQuery, tagsQuery, defaultMonth].some((q) => q.isError && q.data !== undefined);
   const title = kind === 'EXPENSE' ? 'despesas' : 'ganhos';
   const baseMonth = month ?? defaultMonth.data?.month ?? monthKeyOf(todayInSaoPaulo());
   const newEntryProps = { kind, defaultDate: `${baseMonth}-05`, methods: methodList ?? [], canWrite };
 
   return (
-    <EntryActionsProvider kind={kind} canWrite={canWrite} methods={methods}>
+    <EntryActionsProvider kind={kind} canWrite={canWrite} methods={methods} tags={tags}>
       <section aria-label={`Lançamentos de ${title}`} className="flex flex-col gap-5">
         <h1 className="text-2xl font-semibold text-ink">{kind === 'EXPENSE' ? 'Despesas' : 'Ganhos'}</h1>
         {selection && (
@@ -200,6 +220,21 @@ export function EntriesPage({ kind }: { kind: EntryKind }) {
                   className="rounded-md border border-line px-2 py-0.5 text-xs text-muted hover:bg-hover aria-pressed:bg-hover aria-pressed:text-ink"
                 >
                   {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {tagList && tagList.length > 0 && (
+            <div role="group" aria-label="Etiqueta" className="flex flex-wrap gap-1.5">
+              {tagList.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  aria-pressed={tagFilter.has(t.id)}
+                  onClick={() => toggleTag(t.id)}
+                  className="rounded-md border border-line px-2 py-0.5 text-xs text-muted hover:bg-hover aria-pressed:bg-hover aria-pressed:text-ink"
+                >
+                  {t.name}
                 </button>
               ))}
             </div>

@@ -16,4 +16,7 @@ export const queryKeys = {
   defaultMonth: (kind: EntryKind) => ['default-month', kind] as const,
   summary: (from: MonthKey, to: MonthKey) => ['summary', from, to] as const,
   paymentMethods: () => ['payment-methods'] as const,
+  tags: () => ['tags'] as const,
+  salary: () => ['salary'] as const,
+  monthlySeries: (kind: EntryKind) => ['monthly-series', kind] as const,
 };

@@ -23,10 +23,10 @@ export interface EntryPatch {
   pixKey?: string | null;
 }
 
-/** Depois de qualquer escrita: listas, atrasados, mês padrão e resumo (prefixo). */
+/** Depois de qualquer escrita: listas, atrasados, mês padrão, resumo, séries e salário (prefixo). */
 export function invalidateEntryQueries(client: QueryClient): Promise<void> {
   return Promise.all(
-    [['entries'], ['overdue'], ['default-month'], ['summary']].map((queryKey) => client.invalidateQueries({ queryKey })),
+    [['entries'], ['overdue'], ['default-month'], ['summary'], ['monthly-series'], ['salary']].map((queryKey) => client.invalidateQueries({ queryKey })),
   ).then(() => undefined);
 }
 
