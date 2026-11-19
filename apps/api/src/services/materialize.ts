@@ -8,6 +8,7 @@ import {
 import { prisma } from '../db';
 import type { Prisma } from '../generated/prisma/client';
 import { fromIsoDate, toIsoDate } from './dto';
+import { copySeriesTags } from './tags';
 
 /** Meses gerados à frente de `max(mês de hoje, mês de início da série)`. */
 export const MONTHLY_HORIZON_MONTHS = 12;
@@ -35,6 +36,7 @@ export function horizonMonth(throughMonth: MonthKey, startMonth: MonthKey, today
  * - Trava a linha da série (`FOR UPDATE`) para que requisições concorrentes não gerem o
  *   mesmo mês duas vezes; `skipDuplicates` sobre `@@unique([seriesId, sequence])` é a
  *   segunda barreira.
+ * - As entradas criadas herdam as etiquetas da série (`SeriesTag`).
  * - Respeita `endedOn`: nenhum vencimento depois dele; ao alcançá-lo, `generatedThrough`
  *   vira `endedOn` (geração completa).
  */
@@ -81,7 +83,14 @@ export async function materializeSeries(
   // abrir transação nem travar a linha. Só avança: nada apagado volta a ser gerado.
   const last = rows.at(-1);
   const through = reachedEnd ? fromIsoDate(endedOn!) : last?.dueDate;
-  if (rows.length > 0) await tx.entry.createMany({ data: rows, skipDuplicates: true });
+  if (rows.length > 0) {
+    const created = await tx.entry.createManyAndReturn({
+      data: rows,
+      skipDuplicates: true,
+      select: { id: true },
+    });
+    await copySeriesTags(tx, seriesId, created.map((e) => e.id));
+  }
   if (through) await tx.series.update({ where: { id: seriesId }, data: { generatedThrough: through } });
 }
 

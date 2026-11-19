@@ -38,6 +38,11 @@ const nameSchema = z.string().trim().min(1).max(120);
 const amountSchema = z.number().int().positive().max(MAX_CENTS);
 const pixKeySchema = z.string().max(140).nullish();
 const noteSchema = z.string().max(2000).optional();
+/** Etiquetas de um lançamento: ids não vazios, sem repetição, no máximo 20. */
+export const tagIdsSchema = z
+  .array(z.string().min(1))
+  .max(20)
+  .refine((ids) => new Set(ids).size === ids.length);
 
 const createSchema = z.object({
   kind: kindSchema,
@@ -59,6 +64,7 @@ const updateSchema = z
     paymentMethodId: z.string().min(1).nullable().optional(),
     pixKey: pixKeySchema,
     note: noteSchema,
+    tagIds: tagIdsSchema.optional(),
   })
   .refine((b) => Object.entries(b).some(([key, value]) => key !== 'scope' && value !== undefined));
 
@@ -137,6 +143,7 @@ export const entryRoutes = new Hono<AppEnv>()
         // String vazia limpa a chave (mesma regra da criação).
         pixKey: body.pixKey === undefined ? undefined : body.pixKey ? body.pixKey : null,
         note: body.note,
+        tagIds: body.tagIds,
       });
       if (!changed) return c.json(notFound, 404);
       return c.json(changed);
