@@ -40,7 +40,7 @@ Se o domínio estiver na **Cloudflare**:
 ## 2. Banco Postgres no Dokploy
 
 1. No projeto do Dokploy: **Create Service → Database → PostgreSQL**.
-2. Nome `pluton-db`, banco `pluton`, usuário `pluton` e uma senha forte (gere você, ex.: `openssl rand -base64 32`, ou use o gerador do Dokploy).
+2. Nome `pluton-db`, banco `pluton`, usuário `pluton` e uma senha forte gerada por você com `openssl rand -hex 32` (ou o gerador do Dokploy, se ele só usar letras e números). Use **hex** para a senha do banco: a saída de `base64` pode conter `/`, `+` e `=`, que quebram a `DATABASE_URL` (o `/` é lido como início do nome do banco). O `base64` continua certo para o `BETTER_AUTH_SECRET`, que não vai dentro de URL.
 3. **Não** exponha porta externa. Faça o deploy do banco.
 4. Copie a **Internal Connection URL** — ela vira o `DATABASE_URL` da aplicação.
 
@@ -65,8 +65,18 @@ Se o domínio estiver na **Cloudflare**:
 7. Não publique a porta 3000 diretamente na VPS: o acesso deve passar só pelo Traefik (é ele quem garante o `X-Forwarded-For` usado pelo rate limit).
 8. **Deploy.** Nos logs, deve aparecer o `prisma migrate deploy` aplicando as migrações e depois `Pluton ouvindo em http://localhost:3000 (PWA de ...)`.
 9. Confira: `curl https://finances.philipemorais.com/api/health` → `{"ok":true}`.
+10. **Crie a conta imediatamente**, logo depois do primeiro deploy bem-sucedido (antes de seguir para os passos 4–8): abra `https://finances.philipemorais.com` e crie a conta única. Enquanto não existir nenhum usuário, o cadastro está **aberto para qualquer pessoa** que chegar ao domínio — e quem criar a primeira conta fica com o app (a spec, §4, deixa explícito que cadastro aberto para estranhos é um anti-objetivo; o cadastro só se fecha sozinho depois da primeira conta).
+11. Confirme que o cadastro fechou:
+
+    ```bash
+    curl https://finances.philipemorais.com/api/setup-status   # {"hasUser":true}
+    ```
+
+    Se aparecer `{"hasUser":false}`, a conta não foi criada: volte ao passo 10 agora. Se aparecer `{"hasUser":true}` sem que **você** tenha criado a conta, alguém chegou antes: veja [Conta criada por outra pessoa](#conta-criada-por-outra-pessoa).
 
 Atualizações: faça push na branch configurada e clique em **Deploy** (ou ligue o auto deploy por webhook). As migrações novas rodam sozinhas no start.
+
+**Antes de fazer deploy de uma migração nova** (qualquer commit que adicione uma pasta em `apps/api/prisma/migrations/`), rode um **backup manual** do `pluton-db` (no serviço `pluton-db` → **Backups**, dispare o backup configurado no passo 5 manualmente) e confira o arquivo no R2. As migrações são versionadas e não apagam dados de propósito, mas o backup recente é o caminho de volta se uma delas der errado. O container faz desligamento gracioso no `SIGTERM` do redeploy (fecha o servidor HTTP e o Prisma), então o deploy não precisa esperar o `SIGKILL`.
 
 ## 4. Bucket R2 e destino S3 no Dokploy
 
@@ -111,10 +121,11 @@ Nunca restaure por cima do banco de produção para "testar".
 
 ## 7. Primeiro acesso
 
-1. Abra `https://finances.philipemorais.com`.
-2. Crie a conta (o cadastro só é aceito enquanto não existir nenhum usuário; depois fica desabilitado).
-3. Vá em **Importar** e envie o CSV exportado do Notion (`Despesas ..._all.csv`); revise a prévia e confirme.
-4. Confira um mês conhecido (ex.: dez/2026) contra a tabela do Notion.
+A conta já foi criada no passo 3.10 (e `GET /api/setup-status` devolve `{"hasUser":true}`).
+
+1. Entre em `https://finances.philipemorais.com`.
+2. Vá em **Importar** e envie o CSV exportado do Notion (`Despesas ..._all.csv`); revise a prévia e confirme.
+3. Confira um mês conhecido (ex.: dez/2026) contra a tabela do Notion.
 
 ## 8. Instalar o PWA
 
@@ -122,6 +133,51 @@ Nunca restaure por cima do banco de produção para "testar".
 - **Mac:** abra no Safari → **Arquivo** → **Adicionar ao Dock**.
 
 Sem conexão, o app abre com os últimos dados carregados, em modo **somente leitura**.
+
+## Recuperar a senha
+
+Não há "esqueci a senha" no app (conta única, sem e-mail). Para definir uma senha nova, gere o hash com a mesma função do Better Auth que o app usa e grave-o direto no banco.
+
+> **NUNCA apague a linha do usuário (`"user"`) para "recomeçar" o cadastro.** As tabelas `account`, `session`, `PaymentMethod`, `Series` e `Entry` têm `onDelete: Cascade` para o usuário: apagar o usuário **apaga todos os lançamentos, séries e métodos**. Para trocar a senha, altere só `account.password`, como abaixo.
+
+1. Faça um backup manual do `pluton-db` antes (no serviço `pluton-db` → **Backups**, dispare o backup manualmente).
+2. No Dokploy, abra o **terminal do container da aplicação** `pluton` (ele já tem o Better Auth instalado em `/app/apps/api/node_modules`) e gere o hash. A senha é lida sem eco e passada por variável de ambiente — não fica no histórico do shell nem na linha de comando:
+
+   ```sh
+   cd /app/apps/api
+   printf 'Nova senha (mín. 8 caracteres): '; stty -echo; read -r PLUTON_PW; stty echo; echo
+   PLUTON_PW="$PLUTON_PW" node --input-type=module -e "
+   import { hashPassword } from 'better-auth/crypto';
+   const pw = process.env.PLUTON_PW ?? '';
+   if (pw.length < 8) { console.error('Senha curta demais.'); process.exit(1); }
+   console.log(await hashPassword(pw));
+   "
+   unset PLUTON_PW
+   ```
+
+   A saída é uma linha `salt:hash` em hexadecimal (scrypt, o formato do Better Auth 1.7). Ela não é a senha, mas trate-a como segredo: não cole em chat, issue ou commit.
+3. No **terminal do serviço `pluton-db`**, grave o hash na conta de e-mail e senha e encerre as sessões abertas (todos os aparelhos precisarão entrar de novo):
+
+   ```bash
+   psql -U pluton -d pluton
+   ```
+
+   ```sql
+   BEGIN;
+   UPDATE "account" SET password = '<linha salt:hash do passo 2>', "updatedAt" = now()
+     WHERE "providerId" = 'credential';   -- deve responder UPDATE 1
+   DELETE FROM "session";                  -- só sessões; nenhum dado financeiro
+   COMMIT;
+   ```
+
+   Se o `UPDATE` não responder `UPDATE 1`, rode `ROLLBACK;` e não continue.
+4. Entre no app com a senha nova.
+
+O procedimento é coberto por um teste da API (`apps/api/test/auth.test.ts`, "recuperação de senha do runbook"), que quebra se uma atualização do Better Auth mudar o formato do hash.
+
+## Conta criada por outra pessoa
+
+Se `GET /api/setup-status` devolveu `{"hasUser":true}` sem que você tenha criado a conta (passo 3.11) e o banco ainda não tem dados seus, o banco é novo e pode ser recriado do zero: apague o serviço `pluton-db` no Dokploy, crie outro (passo 2, com senha nova), atualize a `DATABASE_URL` da aplicação, faça o deploy e crie a conta imediatamente. Isso só vale **antes** de importar ou lançar qualquer dado — depois disso, nunca apague o banco nem a linha do usuário.
 
 ## Proxy e IP do cliente
 
