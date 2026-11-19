@@ -16,6 +16,7 @@ import { EditableCell } from './EditableCell';
 import { useEntryActions } from './EntryActions';
 import { KindIcon } from './KindIcon';
 import { MethodTag } from './MethodTag';
+import { SalaryBadge } from './SalaryBadge';
 import { TagChips } from './TagChips';
 import { TagPicker } from './TagPicker';
 import { RowActions } from './RowActions';
@@ -51,6 +52,7 @@ function NameCell({ entry }: { entry: EntryDTO }) {
         <span className="flex items-center gap-2">
           <KindIcon kind={entry.kind} />
           <span>{entry.displayName}</span>
+          <SalaryBadge entry={entry} />
         </span>
       }
       initial={entry.displayName}

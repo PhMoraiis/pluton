@@ -12,6 +12,7 @@ import {
 } from '@pluton/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MethodTag } from '../components/MethodTag';
+import { SalaryBadge } from '../components/SalaryBadge';
 import { TagChips } from '../components/TagChips';
 import { apiFetch } from '../lib/api';
 import { usePayEntry } from '../lib/entryMutations';
@@ -62,7 +63,10 @@ function HistoryCard({
         className="mt-1"
       />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-sm text-ink">{entry.displayName}</span>
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm text-ink">{entry.displayName}</span>
+          <SalaryBadge entry={entry} />
+        </span>
         <span className="text-sm font-medium tabular-nums text-ink">{formatBRL(entry.amountCents)}</span>
         <MethodTag method={entry.paymentMethodId ? method : undefined} />
         <TagChips tagIds={entry.tagIds} tags={tags} />

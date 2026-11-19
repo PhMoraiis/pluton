@@ -243,6 +243,31 @@ describe('EntriesPage (leitura)', () => {
     expect(within(bar).getByText(`recebido R$${SP}0,00 · a receber R$${SP}5.000,00`)).toBeInTheDocument();
   });
 
+  test('lançamento de salário mostra "Salário · estimado" ou "Salário · ajustado"; comum não mostra etiqueta', async () => {
+    server.entries = [
+      entry({ id: 's1', kind: 'INCOME', displayName: 'Salário Acme', amountCents: 500000, dueDate: '2026-12-05', seriesRole: 'SALARY' }),
+      entry({ id: 's2', kind: 'INCOME', displayName: 'Salário Beta', amountCents: 510000, dueDate: '2026-12-06', seriesRole: 'SALARY', amountAdjusted: true }),
+      entry({ id: 'n1', kind: 'INCOME', displayName: 'Freela', amountCents: 10000, dueDate: '2026-12-07' }),
+    ];
+
+    renderPage('INCOME');
+
+    expect(await screen.findByText('Salário · estimado')).toBeInTheDocument();
+    expect(screen.getByText('Salário · ajustado')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Salário ·/)).toHaveLength(2);
+  });
+
+  test('salário também aparece nos cartões do celular', async () => {
+    setViewport(false);
+    server.entries = [
+      entry({ id: 's1', kind: 'INCOME', displayName: 'Salário', amountCents: 500000, dueDate: '2026-12-05', seriesRole: 'SALARY' }),
+    ];
+
+    renderPage('INCOME');
+
+    expect(await screen.findByText('Salário · estimado')).toBeInTheDocument();
+  });
+
   test('ganhos usam kind=INCOME', async () => {
     renderPage('INCOME');
     await waitFor(() => expect(requested.some((r) => r.startsWith('/api/entries?kind=INCOME'))).toBe(true));

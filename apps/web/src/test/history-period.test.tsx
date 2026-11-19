@@ -154,6 +154,18 @@ describe('HistoryPage', () => {
     expect(await within(card).findByText('Assinatura')).toBeInTheDocument();
   });
 
+  test('salário pago mostra a etiqueta "Salário" no histórico', async () => {
+    entries = [
+      entry({ id: 's', kind: 'INCOME', displayName: 'Salário', amountCents: 500000, dueDate: '2026-10-05', paidOn: '2026-10-05', seriesRole: 'SALARY', amountAdjusted: true }),
+    ];
+    renderWith(<HistoryPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ganhos' }));
+
+    const out = await screen.findByRole('region', { name: 'out. de 2026' });
+    expect(within(out).getAllByText('Salário')).toHaveLength(2); // nome + etiqueta
+    expect(within(out).queryByText(/Salário ·/)).not.toBeInTheDocument();
+  });
+
   test('desmarcar pago envia pay { paid: false }', async () => {
     entries = [entry({ id: 'x', displayName: 'Luz', amountCents: 5000, dueDate: '2026-11-05', paidOn: '2026-11-05' })];
     renderWith(<HistoryPage />);

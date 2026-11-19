@@ -13,6 +13,8 @@ const MESSAGES: Record<string, string> = {
   duplicate_name: 'Já existe um método com esse nome.',
   payload_too_large: 'Arquivo grande demais (máximo 2 MB).',
   system_tag: 'A etiqueta Assinatura não pode ser excluída.',
+  start_month_in_past: 'O mês de início não pode estar no passado.',
+  overlaps_previous_salary: 'Já existe salário até esse mês. Escolha um mês de início posterior.',
   not_monthly: 'Só séries mensais podem ser encerradas.',
 };
 

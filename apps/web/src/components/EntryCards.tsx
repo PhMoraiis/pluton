@@ -4,6 +4,7 @@ import { useEntryActions } from './EntryActions';
 import { KindIcon } from './KindIcon';
 import { MethodTag } from './MethodTag';
 import { TagChips } from './TagChips';
+import { SalaryBadge } from './SalaryBadge';
 import { PixCopyButton } from './PixCopyButton';
 import { PencilIcon } from './RowActions';
 
@@ -28,6 +29,7 @@ export function EntryCards({ rows, overdue = false }: Props) {
                 <KindIcon kind={e.kind} />
               </span>
               <span className="min-w-0 flex-1 break-words text-sm text-ink">{e.displayName}</span>
+              <SalaryBadge entry={e} />
               <span className="text-sm font-medium tabular-nums text-ink">{formatBRL(e.amountCents)}</span>
               <button
                 type="button"

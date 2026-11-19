@@ -212,6 +212,7 @@ function mockFetch() {
           return new Response(null, { status: 204 });
         }
       }
+      if (url.pathname === '/api/salary' && method === 'GET') return json(null);
       if (url.pathname === '/api/tags') {
         if (method === 'GET') return json(tags);
         if (method === 'POST') {
