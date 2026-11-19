@@ -21,12 +21,14 @@ export interface EntryPatch {
   paymentMethodId?: string | null;
   /** `null` (ou "") limpa a chave. */
   pixKey?: string | null;
+  /** Conjunto completo de etiquetas (substitui o atual). */
+  tagIds?: string[];
 }
 
-/** Depois de qualquer escrita: listas, atrasados, mês padrão e resumo (prefixo). */
+/** Depois de qualquer escrita: listas, atrasados, mês padrão, resumo, séries e salário (prefixo). */
 export function invalidateEntryQueries(client: QueryClient): Promise<void> {
   return Promise.all(
-    [['entries'], ['overdue'], ['default-month'], ['summary']].map((queryKey) => client.invalidateQueries({ queryKey })),
+    [['entries'], ['overdue'], ['default-month'], ['summary'], ['monthly-series'], ['salary']].map((queryKey) => client.invalidateQueries({ queryKey })),
   ).then(() => undefined);
 }
 

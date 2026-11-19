@@ -1,4 +1,4 @@
-import type { PaymentMethodDTO } from '@pluton/shared';
+import type { PaymentMethodDTO, TagDTO } from '@pluton/shared';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   installmentHint,
@@ -11,11 +11,14 @@ import {
   type EntryDraft,
 } from '../lib/entryDraft';
 import { Modal } from './Modal';
+import { TagPicker } from './TagPicker';
 
 interface Props {
   mode: 'create' | 'edit';
   initial: EntryDraft;
   methods: PaymentMethodDTO[];
+  /** Etiquetas do usuário; a seção só aparece na edição e com ao menos uma. */
+  tags?: TagDTO[];
   canWrite: boolean;
   saving?: boolean;
   error?: string | null;
@@ -35,6 +38,7 @@ export function EntrySheet({
   mode,
   initial,
   methods,
+  tags = [],
   canWrite,
   saving = false,
   error,
@@ -123,6 +127,18 @@ export function EntrySheet({
             <input type="checkbox" checked={draft.monthly} onChange={(e) => set('monthly', e.target.checked)} />
             Mensal
           </label>
+        )}
+        {mode === 'edit' && tags.length > 0 && (
+          <div className="flex flex-col gap-1 text-xs text-muted">
+            Etiquetas
+            <TagPicker
+              label="Etiquetas"
+              tags={tags}
+              value={draft.tagIds}
+              disabled={!canWrite}
+              onChange={(next) => set('tagIds', next)}
+            />
+          </div>
         )}
         {error && (
           <p role="alert" className="text-sm text-danger">

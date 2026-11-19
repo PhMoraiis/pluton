@@ -2,7 +2,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { EntryDTO, PaymentMethodDTO, Summary } from '@pluton/shared';
+import type { EntryDTO, PaymentMethodDTO, Summary, TagDTO } from '@pluton/shared';
 
 const sessionState = vi.hoisted(() => ({ data: { user: { id: 'u1' }, session: { id: 's1' } } as unknown }));
 vi.mock('../lib/auth-client', async (importOriginal) => {
@@ -22,6 +22,8 @@ import { PeriodPage } from '../pages/PeriodPage';
 const SP = ' ';
 const methods: PaymentMethodDTO[] = [{ id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 }];
 
+const tags: TagDTO[] = [{ id: 't-sub', name: 'Assinatura', color: '#D9730D', sortOrder: 0, system: 'SUBSCRIPTION' }];
+
 function entry(over: Partial<EntryDTO> & Pick<EntryDTO, 'id' | 'displayName' | 'amountCents' | 'dueDate'>): EntryDTO {
   return {
     kind: 'EXPENSE',
@@ -34,6 +36,9 @@ function entry(over: Partial<EntryDTO> & Pick<EntryDTO, 'id' | 'displayName' | '
     seriesType: null,
     sequence: null,
     totalInstallments: null,
+    tagIds: [],
+    seriesRole: null,
+    amountAdjusted: false,
     ...over,
   };
 }
@@ -63,6 +68,7 @@ function mockFetch() {
         return json(summary);
       }
       if (url.pathname === '/api/payment-methods') return json(methods);
+      if (url.pathname === '/api/tags') return json(tags);
       if (/^\/api\/entries\/[^/]+\/pay$/.test(url.pathname)) return json(entries[0]);
       return new Response('not found', { status: 404 });
     }),
@@ -97,7 +103,7 @@ function renderWith(ui: React.ReactNode, client = new QueryClient({ defaultOptio
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-18T15:00:00Z') });
   entries = [];
-  summary = { expenseCents: 0, incomeCents: 0, balanceCents: 0, realizedCents: 0 };
+  summary = { expenseCents: 0, expensePaidCents: 0, incomeCents: 0, incomePaidCents: 0, balanceCents: 0, realizedCents: 0 };
   requested = [];
   online = true;
   vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);
@@ -139,6 +145,25 @@ describe('HistoryPage', () => {
     const dez = await screen.findByRole('region', { name: 'dez. de 2026' });
     expect(within(dez).getByText('Seguro')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'nov. de 2026' })).queryByText('Seguro')).not.toBeInTheDocument();
+  });
+
+  test('mostra o chip da etiqueta no cartão do histórico', async () => {
+    entries = [entry({ id: 'x', displayName: 'Netflix', amountCents: 5000, dueDate: '2026-11-05', paidOn: '2026-11-05', tagIds: ['t-sub'] })];
+    renderWith(<HistoryPage />);
+    const card = (await screen.findByText('Netflix')).closest('li')!;
+    expect(await within(card).findByText('Assinatura')).toBeInTheDocument();
+  });
+
+  test('salário pago mostra a etiqueta "Salário" no histórico', async () => {
+    entries = [
+      entry({ id: 's', kind: 'INCOME', displayName: 'Salário', amountCents: 500000, dueDate: '2026-10-05', paidOn: '2026-10-05', seriesRole: 'SALARY', amountAdjusted: true }),
+    ];
+    renderWith(<HistoryPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ganhos' }));
+
+    const out = await screen.findByRole('region', { name: 'out. de 2026' });
+    expect(within(out).getAllByText('Salário')).toHaveLength(2); // nome + etiqueta
+    expect(within(out).queryByText(/Salário ·/)).not.toBeInTheDocument();
   });
 
   test('desmarcar pago envia pay { paid: false }', async () => {
@@ -212,7 +237,7 @@ describe('HistoryPage', () => {
 
 describe('PeriodPage', () => {
   test('PeriodPage mostra Realizado com o valor de /api/summary', async () => {
-    summary = { expenseCents: 100000, incomeCents: 250000, balanceCents: 150000, realizedCents: 123456 };
+    summary = { expenseCents: 100000, expensePaidCents: 0, incomeCents: 250000, incomePaidCents: 0, balanceCents: 150000, realizedCents: 123456 };
     renderWith(<PeriodPage />);
 
     expect(await screen.findByText(`R$${SP}1.234,56`)).toBeInTheDocument();

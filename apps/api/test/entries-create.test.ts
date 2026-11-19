@@ -143,6 +143,9 @@ describe('POST /api/entries', () => {
         seriesType: null,
         sequence: null,
         totalInstallments: null,
+        tagIds: [],
+        seriesRole: null,
+        amountAdjusted: false,
       },
     ]);
     expect(await prisma.series.count()).toBe(0);

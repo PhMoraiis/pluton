@@ -8,9 +8,12 @@ import {
   type EntryKind,
   type MonthKey,
   type PaymentMethodDTO,
+  type TagDTO,
 } from '@pluton/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MethodTag } from '../components/MethodTag';
+import { SalaryBadge } from '../components/SalaryBadge';
+import { TagChips } from '../components/TagChips';
 import { apiFetch } from '../lib/api';
 import { usePayEntry } from '../lib/entryMutations';
 import { friendlyError } from '../lib/errors';
@@ -36,11 +39,13 @@ interface Column {
 function HistoryCard({
   entry,
   method,
+  tags,
   canWrite,
   onError,
 }: {
   entry: EntryDTO;
   method: PaymentMethodDTO | undefined;
+  tags: Map<string, TagDTO>;
   canWrite: boolean;
   onError: (message: string) => void;
 }) {
@@ -58,9 +63,13 @@ function HistoryCard({
         className="mt-1"
       />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-sm text-ink">{entry.displayName}</span>
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm text-ink">{entry.displayName}</span>
+          <SalaryBadge entry={entry} />
+        </span>
         <span className="text-sm font-medium tabular-nums text-ink">{formatBRL(entry.amountCents)}</span>
         <MethodTag method={entry.paymentMethodId ? method : undefined} />
+        <TagChips tagIds={entry.tagIds} tags={tags} />
       </div>
     </li>
   );
@@ -88,6 +97,11 @@ export function HistoryPage() {
     queryFn: () => apiFetch<PaymentMethodDTO[]>('/api/payment-methods'),
   });
   const methods = useMemo(() => new Map((methodsQuery.data ?? []).map((m) => [m.id, m])), [methodsQuery.data]);
+  const tagsQuery = useQuery({
+    queryKey: queryKeys.tags(),
+    queryFn: () => apiFetch<TagDTO[]>('/api/tags'),
+  });
+  const tags = useMemo(() => new Map((tagsQuery.data ?? []).map((t) => [t.id, t])), [tagsQuery.data]);
 
   // Agrupa pelo mês do VENCIMENTO. Pagas adiantadas de meses futuros também aparecem (até `to`).
   const columns = useMemo<Column[]>(() => {
@@ -114,7 +128,7 @@ export function HistoryPage() {
     scrolled.current = true;
   }, [desktop, entries.data]);
 
-  const stale = [entries, methodsQuery].some((q) => q.isError && q.data !== undefined);
+  const stale = [entries, methodsQuery, tagsQuery].some((q) => q.isError && q.data !== undefined);
   const loadError = !entries.data && entries.error;
 
   const lastMonth = columns[columns.length - 1]!.month;
@@ -222,6 +236,7 @@ export function HistoryPage() {
                       key={e.id}
                       entry={e}
                       method={e.paymentMethodId ? methods.get(e.paymentMethodId) : undefined}
+                      tags={tags}
                       canWrite={canWrite}
                       onError={setActionError}
                     />

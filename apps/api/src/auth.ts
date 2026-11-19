@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { APIError } from 'better-auth/api';
 import { prisma } from './db';
-import { INITIAL_PAYMENT_METHODS } from './payment-method-defaults';
+import { INITIAL_PAYMENT_METHODS, SUBSCRIPTION_TAG } from './payment-method-defaults';
 
 /**
  * Opções `advanced` do Better Auth. Em produção o app fica atrás do Traefik do
@@ -52,6 +52,7 @@ export const auth = betterAuth({
           await prisma.paymentMethod.createMany({
             data: INITIAL_PAYMENT_METHODS.map((m, sortOrder) => ({ ...m, sortOrder, userId: user.id })),
           });
+          await prisma.tag.create({ data: { ...SUBSCRIPTION_TAG, sortOrder: 0, userId: user.id } });
         },
       },
     },

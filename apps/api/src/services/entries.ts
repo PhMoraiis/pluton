@@ -20,6 +20,7 @@ import { prisma } from '../db';
 import type { Prisma, Series } from '../generated/prisma/client';
 import { entryInclude, fromIsoDate, sortEntryDTOs, toEntryDTO, toIsoDate } from './dto';
 import { horizonMonth, materializeSeries } from './materialize';
+import { assertTagsOwned, copySeriesTags, setEntryTags } from './tags';
 
 /** Erro de regra de negócio que a rota devolve como `400 { error: code }`. */
 export class EntryInputError extends Error {
@@ -40,7 +41,7 @@ export interface CreateEntryInput {
   monthly: boolean;
 }
 
-async function assertPaymentMethodOwned(userId: string, paymentMethodId: string | null): Promise<void> {
+export async function assertPaymentMethodOwned(userId: string, paymentMethodId: string | null): Promise<void> {
   if (paymentMethodId === null) return;
   const owned = await prisma.paymentMethod.count({ where: { id: paymentMethodId, userId } });
   if (owned === 0) throw new EntryInputError('invalid_payment_method');
@@ -215,6 +216,7 @@ export interface UpdateEntryInput {
   paymentMethodId?: string | null;
   pixKey?: string | null;
   note?: string;
+  tagIds?: string[];
 }
 
 /** Campos da série alterados por uma edição `following`. */
@@ -233,7 +235,7 @@ function monthsBetween(from: IsoDate, to: IsoDate): number {
 }
 
 /** Trava a linha da série (mesma trava da materialização) dentro de `tx`. */
-async function lockSeries(tx: Prisma.TransactionClient, seriesId: string): Promise<void> {
+export async function lockSeries(tx: Prisma.TransactionClient, seriesId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM "Series" WHERE id = ${seriesId} FOR UPDATE`;
 }
 
@@ -248,17 +250,20 @@ async function deleteSeriesIfEmpty(tx: Prisma.TransactionClient, seriesId: strin
  * se a entrada não existe / é de outro usuário.
  *
  * Em entrada de série, `scope` é obrigatório quando o body **muda** (difere do valor
- * atual da entrada) `dueDate`, `amountCents`, `name`, `paymentMethodId` ou `pixKey`;
- * só os campos que mudam são aplicados/propagados. Em entrada avulsa, `scope` é ignorado.
+ * atual da entrada) `dueDate`, `amountCents`, `name`, `paymentMethodId`, `pixKey` ou
+ * `tagIds` (como conjunto); só os campos que mudam são aplicados/propagados. Em entrada
+ * avulsa, `scope` é ignorado.
  *
- * - `this`: só a entrada.
+ * - `this`: só a entrada (etiquetas inclusive, mesmo paga).
  * - `following`: `dueDate`/`amountCents` via `propagateFollowing` (pagas intocadas) e
- *   gravados na série; `name`/`paymentMethodId`/`pixKey` na série, na entrada e nas
- *   seguintes não pagas.
+ *   gravados na série; `name`/`paymentMethodId`/`pixKey`/`tagIds` na série, na entrada
+ *   (mesmo paga) e nas seguintes não pagas.
  * - Nome de parcela: o sufixo `x/y` é removido (só o nome-base é gravado); `y` diferente
  *   do total (exige `following`) ajusta `totalInstallments`, gerando ou apagando parcelas
  *   não pagas. `x` é ignorado.
  * - `note` é sempre só da entrada.
+ * - Série `SALARY`, valor mudado: `this` marca `amountAdjusted`; `following` desmarca a
+ *   editada e não sobrescreve o valor das seguintes ajustadas (a data propaga).
  */
 export async function updateEntry(
   userId: string,
@@ -271,8 +276,12 @@ export async function updateEntry(
     const found = await tx.entry.findFirst({ where: { id, userId }, select: { seriesId: true } });
     if (!found) return null;
     if (found.seriesId) await lockSeries(tx, found.seriesId);
-    const entry = await tx.entry.findFirst({ where: { id, userId } });
+    const entry = await tx.entry.findFirst({
+      where: { id, userId },
+      include: { tags: { select: { tagId: true } } },
+    });
     if (!entry) return null;
+    if (input.tagIds !== undefined) await assertTagsOwned(tx, userId, input.tagIds);
 
     const series = entry.seriesId
       ? await tx.series.findUniqueOrThrow({ where: { id: entry.seriesId } })
@@ -305,8 +314,14 @@ export async function updateEntry(
       pixKey: input.pixKey !== undefined && input.pixKey !== entry.pixKey ? input.pixKey : undefined,
     };
     const note = input.note !== undefined && input.note !== entry.note ? input.note : undefined;
+    const currentTags = new Set(entry.tags.map((t) => t.tagId));
+    const tagIds =
+      input.tagIds !== undefined &&
+      (input.tagIds.length !== currentTags.size || input.tagIds.some((t) => !currentTags.has(t)))
+        ? input.tagIds
+        : undefined;
     const seriesFieldChanged =
-      newTotal !== null || Object.values(change).some((v) => v !== undefined);
+      newTotal !== null || tagIds !== undefined || Object.values(change).some((v) => v !== undefined);
     /** Dados de update só desta entrada. */
     const ownData = {
       ...change,
@@ -315,6 +330,7 @@ export async function updateEntry(
     };
 
     if (!series || entry.sequence === null) {
+      if (tagIds !== undefined) await setEntryTags(tx, [id], tagIds);
       const updated = await tx.entry.update({
         where: { id },
         data: ownData,
@@ -329,9 +345,16 @@ export async function updateEntry(
     }
 
     const changedIds = new Set<string>([id]);
+    /**
+     * Valor mudado numa série de salário: `this` marca a entrada como ajustada à mão;
+     * `following` desmarca a editada e preserva o valor das seguintes ajustadas.
+     */
+    const salaryAmountChange = series.role === 'SALARY' && change.amountCents !== undefined;
 
     if (input.scope !== 'following') {
-      const updated = await tx.entry.update({ where: { id }, data: ownData, include: entryInclude });
+      if (tagIds !== undefined) await setEntryTags(tx, [id], tagIds);
+      const data = salaryAmountChange ? { ...ownData, amountAdjusted: true } : ownData;
+      const updated = await tx.entry.update({ where: { id }, data, include: entryInclude });
       return [updated];
     }
 
@@ -351,7 +374,11 @@ export async function updateEntry(
         entry.sequence,
         { dueDate: change.dueDate, amountCents: change.amountCents },
       );
+      // `amountAdjusted` só muda sob a trava da série, então a leitura acima vale na gravação.
+      const adjusted = new Set(salaryAmountChange ? all.filter((e) => e.amountAdjusted).map((e) => e.id) : []);
       for (const u of updates) {
+        const keepAmount = u.id !== id && adjusted.has(u.id);
+        if (keepAmount && u.dueDate === undefined) continue;
         // `setPaid` não pega a trava da série: uma seguinte pode ter sido paga depois da
         // leitura acima. O filtro `paidOn: null` é reavaliado na gravação (após a trava de
         // linha), então uma parcela paga no meio do caminho fica intocada.
@@ -359,7 +386,8 @@ export async function updateEntry(
           where: u.id === id ? { id } : { id: u.id, paidOn: null },
           data: {
             dueDate: u.dueDate !== undefined ? fromIsoDate(u.dueDate) : undefined,
-            amountCents: u.amountCents,
+            amountCents: keepAmount ? undefined : u.amountCents,
+            ...(u.id === id && salaryAmountChange ? { amountAdjusted: false } : {}),
           },
         });
         if (count > 0) changedIds.add(u.id);
@@ -401,6 +429,21 @@ export async function updateEntry(
       for (const t of targets) changedIds.add(t.id);
     }
 
+    // Antes do ajuste de total: parcelas novas herdam as etiquetas já gravadas na série.
+    if (tagIds !== undefined) {
+      await tx.seriesTag.deleteMany({ where: { seriesId: series.id } });
+      await tx.seriesTag.createMany({ data: tagIds.map((tagId) => ({ seriesId: series.id, tagId })) });
+      await setEntryTags(tx, [id], tagIds);
+      const followers = await tx.entry.findMany({
+        where: { seriesId: series.id, sequence: { gt: entry.sequence }, paidOn: null },
+        select: { id: true },
+      });
+      const followerIds = followers.map((f) => f.id);
+      await setEntryTags(tx, followerIds, tagIds, { onlyUnpaid: true });
+      changedIds.add(id);
+      for (const f of followerIds) changedIds.add(f);
+    }
+
     if (newTotal !== null) {
       await changeTotalInstallments(tx, series.id, entry.sequence, newTotal, seriesData);
     }
@@ -421,7 +464,8 @@ export async function updateEntry(
  * Ajusta o total de uma série parcelada para `total` (já com as demais mudanças de
  * `following` aplicadas às entradas). Aumento: gera `max+1..total` mensalmente a partir
  * da última parcela. Diminuição: apaga as não pagas acima de `total`. Total abaixo da
- * maior parcela paga ou da parcela editada → 400. Grava em `seriesData`.
+ * maior parcela paga ou da parcela editada → 400. Grava em `seriesData`. Parcelas geradas
+ * herdam as etiquetas da série.
  */
 async function changeTotalInstallments(
   tx: Prisma.TransactionClient,
@@ -451,7 +495,7 @@ async function changeTotalInstallments(
     total,
     series.dayOfMonth,
   );
-  await tx.entry.createMany({
+  const created = await tx.entry.createManyAndReturn({
     data: plan.map((p) => ({
       userId: series.userId,
       kind: series.kind,
@@ -463,7 +507,9 @@ async function changeTotalInstallments(
       seriesId,
       sequence: p.sequence,
     })),
+    select: { id: true },
   });
+  await copySeriesTags(tx, seriesId, created.map((e) => e.id));
   seriesData.generatedThrough = fromIsoDate(plan.at(-1)!.dueDate);
 }
 
@@ -540,18 +586,26 @@ export async function endSeries(
   seriesId: string,
   lastMonth: MonthKey,
 ): Promise<'ok' | 'not_found' | 'not_monthly'> {
-  return prisma.$transaction(async (tx) => {
-    const owned = await tx.series.count({ where: { id: seriesId, userId } });
-    if (owned === 0) return 'not_found';
-    await lockSeries(tx, seriesId);
-    const series = await tx.series.findFirst({ where: { id: seriesId, userId } });
-    if (!series) return 'not_found';
-    if (series.type !== 'MONTHLY') return 'not_monthly';
+  return prisma.$transaction((tx) => endSeriesIn(tx, userId, seriesId, lastMonth));
+}
 
-    const endedOn = fromIsoDate(monthRange(lastMonth, lastMonth).end);
-    await tx.series.update({ where: { id: seriesId }, data: { endedOn } });
-    await tx.entry.deleteMany({ where: { seriesId, paidOn: null, dueDate: { gt: endedOn } } });
-    await deleteSeriesIfEmpty(tx, seriesId);
-    return 'ok';
-  });
+/** Corpo de `endSeries` numa transação já aberta (o salário o usa sob o seu advisory lock). */
+export async function endSeriesIn(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  seriesId: string,
+  lastMonth: MonthKey,
+): Promise<'ok' | 'not_found' | 'not_monthly'> {
+  const owned = await tx.series.count({ where: { id: seriesId, userId } });
+  if (owned === 0) return 'not_found';
+  await lockSeries(tx, seriesId);
+  const series = await tx.series.findFirst({ where: { id: seriesId, userId } });
+  if (!series) return 'not_found';
+  if (series.type !== 'MONTHLY') return 'not_monthly';
+
+  const endedOn = fromIsoDate(monthRange(lastMonth, lastMonth).end);
+  await tx.series.update({ where: { id: seriesId }, data: { endedOn } });
+  await tx.entry.deleteMany({ where: { seriesId, paidOn: null, dueDate: { gt: endedOn } } });
+  await deleteSeriesIfEmpty(tx, seriesId);
+  return 'ok';
 }

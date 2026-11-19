@@ -3,6 +3,8 @@ import { copyablePixKey } from '../lib/entryDraft';
 import { useEntryActions } from './EntryActions';
 import { KindIcon } from './KindIcon';
 import { MethodTag } from './MethodTag';
+import { TagChips } from './TagChips';
+import { SalaryBadge } from './SalaryBadge';
 import { PixCopyButton } from './PixCopyButton';
 import { PencilIcon } from './RowActions';
 
@@ -12,7 +14,7 @@ interface Props {
 }
 
 export function EntryCards({ rows, overdue = false }: Props) {
-  const { canWrite, methods, setPaid, openEditor } = useEntryActions();
+  const { canWrite, methods, tags, setPaid, openEditor } = useEntryActions();
   return (
     <ul className="flex flex-col gap-2">
       {rows.map((e) => {
@@ -27,6 +29,7 @@ export function EntryCards({ rows, overdue = false }: Props) {
                 <KindIcon kind={e.kind} />
               </span>
               <span className="min-w-0 flex-1 break-words text-sm text-ink">{e.displayName}</span>
+              <SalaryBadge entry={e} />
               <span className="text-sm font-medium tabular-nums text-ink">{formatBRL(e.amountCents)}</span>
               <button
                 type="button"
@@ -41,6 +44,7 @@ export function EntryCards({ rows, overdue = false }: Props) {
             <div className="mt-1.5 flex items-center gap-2 pl-6 text-xs text-muted">
               <span>{formatDatePtBR(e.dueDate)}</span>
               <MethodTag method={e.paymentMethodId ? methods.get(e.paymentMethodId) : undefined} />
+              <TagChips tagIds={e.tagIds} tags={tags} />
               {pixKey && <PixCopyButton pixKey={pixKey} />}
               <label className="ml-auto flex items-center gap-1.5 py-1">
                 <input

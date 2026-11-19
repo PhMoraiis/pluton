@@ -1,5 +1,5 @@
 import { formatEntryName, type EntryDTO, type IsoDate } from '@pluton/shared';
-import type { Entry, Series } from '../generated/prisma/client';
+import type { Entry, Series, Tag } from '../generated/prisma/client';
 
 /**
  * Conversão `@db.Date` ↔ `IsoDate`. Única porta de entrada/saída de datas puras:
@@ -21,7 +21,8 @@ export function isValidIsoDate(value: string): boolean {
 }
 
 export type EntryWithSeries = Entry & {
-  series: Pick<Series, 'type' | 'totalInstallments'> | null;
+  series: Pick<Series, 'type' | 'totalInstallments' | 'role'> | null;
+  tags: { tag: Pick<Tag, 'id' | 'name' | 'sortOrder'> }[];
 };
 
 export function toEntryDTO(entry: EntryWithSeries): EntryDTO {
@@ -41,12 +42,19 @@ export function toEntryDTO(entry: EntryWithSeries): EntryDTO {
     seriesType: entry.series?.type ?? null,
     sequence: entry.sequence,
     totalInstallments,
+    tagIds: [...entry.tags]
+      .map((t) => t.tag)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'pt-BR'))
+      .map((t) => t.id),
+    seriesRole: entry.series?.role ?? null,
+    amountAdjusted: entry.amountAdjusted,
   };
 }
 
 /** `include` padrão para montar `EntryDTO`. */
 export const entryInclude = {
-  series: { select: { type: true, totalInstallments: true } },
+  series: { select: { type: true, totalInstallments: true, role: true } },
+  tags: { select: { tag: { select: { id: true, name: true, sortOrder: true } } } },
 } as const;
 
 /** Ordem de exibição: `dueDate`, depois `displayName` (pt-BR), depois `id` (estável). */

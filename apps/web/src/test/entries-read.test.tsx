@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { EntryDTO, EntryKind, PaymentMethodDTO, Summary } from '@pluton/shared';
+import type { EntryDTO, EntryKind, PaymentMethodDTO, Summary, TagDTO } from '@pluton/shared';
 import { queryKeys } from '../lib/queryKeys';
 import { EntriesPage } from '../pages/EntriesPage';
 
@@ -12,6 +12,11 @@ const SP = ' ';
 const methods: PaymentMethodDTO[] = [
   { id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 },
   { id: 'm-card', name: 'Cartão de crédito', color: '#e255a1', sortOrder: 1 },
+];
+
+const tagList: TagDTO[] = [
+  { id: 't-sub', name: 'Assinatura', color: '#D9730D', sortOrder: 0, system: 'SUBSCRIPTION' },
+  { id: 't-stream', name: 'Streaming', color: '#0B6E99', sortOrder: 1, system: null },
 ];
 
 function entry(over: Partial<EntryDTO> & Pick<EntryDTO, 'id' | 'displayName' | 'amountCents' | 'dueDate'>): EntryDTO {
@@ -26,6 +31,9 @@ function entry(over: Partial<EntryDTO> & Pick<EntryDTO, 'id' | 'displayName' | '
     seriesType: null,
     sequence: null,
     totalInstallments: null,
+    tagIds: [],
+    seriesRole: null,
+    amountAdjusted: false,
     ...over,
   };
 }
@@ -40,6 +48,7 @@ interface Server {
 let server: Server;
 let requested: string[];
 let failing: Set<string>;
+let tags: TagDTO[];
 
 function mockFetch() {
   vi.stubGlobal(
@@ -61,6 +70,8 @@ function mockFetch() {
           return json(server.summary);
         case '/api/payment-methods':
           return json(methods);
+        case '/api/tags':
+          return json(tags);
         default:
           return new Response('not found', { status: 404 });
       }
@@ -81,6 +92,11 @@ function setViewport(desktop: boolean) {
   }));
 }
 
+function LocationProbe() {
+  const loc = useLocation();
+  return <output data-testid="location">{loc.pathname + loc.search}</output>;
+}
+
 function renderPage(
   kind: EntryKind = 'EXPENSE',
   url = '/',
@@ -90,6 +106,7 @@ function renderPage(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[url]}>
         <EntriesPage kind={kind} />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -98,11 +115,12 @@ function renderPage(
 beforeEach(() => {
   requested = [];
   failing = new Set();
+  tags = tagList;
   server = {
     entries: [],
     overdue: [],
     defaultMonth: '2026-12',
-    summary: { expenseCents: 0, incomeCents: 0, balanceCents: 0, realizedCents: 0 },
+    summary: { expenseCents: 0, expensePaidCents: 0, incomeCents: 0, incomePaidCents: 0, balanceCents: 0, realizedCents: 0 },
   };
   mockFetch();
   setViewport(true);
@@ -204,16 +222,50 @@ describe('EntriesPage (leitura)', () => {
   });
 
   test('SummaryBar mostra Despesas, Ganhos, Ganhos − Despesas e não exibe "Realizado"', async () => {
-    server.summary = { expenseCents: 300000, incomeCents: 500000, balanceCents: 200000, realizedCents: 1 };
+    server.summary = {
+      expenseCents: 217896,
+      expensePaidCents: 12700,
+      incomeCents: 500000,
+      incomePaidCents: 0,
+      balanceCents: 282104,
+      realizedCents: 1,
+    };
 
     renderPage();
 
-    expect(await screen.findByText(`R$${SP}3.000,00`)).toBeInTheDocument();
+    expect(await screen.findByText(`R$${SP}2.178,96`)).toBeInTheDocument();
     const bar = screen.getByLabelText('Resumo do mês');
     expect(within(bar).getByText('Despesas')).toBeInTheDocument();
     expect(within(bar).getByText('Ganhos')).toBeInTheDocument();
     expect(within(bar).getByText('Ganhos − Despesas')).toBeInTheDocument();
     expect(screen.queryByText(/realizado/i)).not.toBeInTheDocument();
+    expect(within(bar).getByText(`pago R$${SP}127,00 · a pagar R$${SP}2.051,96`)).toBeInTheDocument();
+    expect(within(bar).getByText(`recebido R$${SP}0,00 · a receber R$${SP}5.000,00`)).toBeInTheDocument();
+  });
+
+  test('lançamento de salário mostra "Salário · estimado" ou "Salário · ajustado"; comum não mostra etiqueta', async () => {
+    server.entries = [
+      entry({ id: 's1', kind: 'INCOME', displayName: 'Salário Acme', amountCents: 500000, dueDate: '2026-12-05', seriesRole: 'SALARY' }),
+      entry({ id: 's2', kind: 'INCOME', displayName: 'Salário Beta', amountCents: 510000, dueDate: '2026-12-06', seriesRole: 'SALARY', amountAdjusted: true }),
+      entry({ id: 'n1', kind: 'INCOME', displayName: 'Freela', amountCents: 10000, dueDate: '2026-12-07' }),
+    ];
+
+    renderPage('INCOME');
+
+    expect(await screen.findByText('Salário · estimado')).toBeInTheDocument();
+    expect(screen.getByText('Salário · ajustado')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Salário ·/)).toHaveLength(2);
+  });
+
+  test('salário também aparece nos cartões do celular', async () => {
+    setViewport(false);
+    server.entries = [
+      entry({ id: 's1', kind: 'INCOME', displayName: 'Salário', amountCents: 500000, dueDate: '2026-12-05', seriesRole: 'SALARY' }),
+    ];
+
+    renderPage('INCOME');
+
+    expect(await screen.findByText('Salário · estimado')).toBeInTheDocument();
   });
 
   test('ganhos usam kind=INCOME', async () => {
@@ -227,7 +279,7 @@ describe('EntriesPage (leitura)', () => {
       entry({ id: 'e1', displayName: 'Obra', amountCents: 171096, dueDate: '2026-12-05' }),
     ]);
     client.setQueryData(queryKeys.defaultMonth('EXPENSE'), { month: '2026-12' });
-    failing = new Set(['/api/entries', '/api/default-month', '/api/summary', '/api/entries/overdue', '/api/payment-methods']);
+    failing = new Set(['/api/entries', '/api/default-month', '/api/summary', '/api/entries/overdue', '/api/payment-methods', '/api/tags']);
 
     renderPage('EXPENSE', '/', client);
 
@@ -245,4 +297,184 @@ describe('EntriesPage (leitura)', () => {
     expect(await screen.findByText('Não foi possível carregar os atrasados.')).toBeInTheDocument();
     expect(await screen.findByText('Não foi possível carregar o resumo.')).toBeInTheDocument();
   });
+
+  describe('ordenação', () => {
+    const sortRows = () => [
+      entry({ id: 'a', displayName: 'Aluguel', amountCents: 50000, dueDate: '2026-12-05' }),
+      entry({ id: 'b', displayName: 'Café', amountCents: 700, dueDate: '2026-12-06' }),
+      entry({ id: 'c', displayName: 'Mercado', amountCents: 25000, dueDate: '2026-12-07' }),
+    ];
+    const tableNames = () =>
+      within(screen.getByRole('table', { name: 'Lançamentos de despesas' }))
+        .getAllByRole('row')
+        .map((r) => r.textContent ?? '')
+        .filter((t) => /Aluguel|Café|Mercado/.test(t))
+        .map((t) => /Aluguel|Café|Mercado/.exec(t)![0]);
+    const location = () => screen.getByTestId('location').textContent;
+
+    test('clicar em "Valor" ordena crescente, de novo decrescente, e grava ?ordem= na URL', async () => {
+      server.entries = sortRows();
+      renderPage();
+      await screen.findByText('Aluguel');
+      expect(tableNames()).toEqual(['Aluguel', 'Café', 'Mercado']);
+
+      fireEvent.click(screen.getByRole('button', { name: /^Valor/ }));
+      expect(tableNames()).toEqual(['Café', 'Mercado', 'Aluguel']);
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute('aria-sort', 'ascending');
+      expect(screen.getByRole('columnheader', { name: /Nome/ })).toHaveAttribute('aria-sort', 'none');
+      expect(location()).toContain('ordem=valor-asc');
+
+      fireEvent.click(screen.getByRole('button', { name: /^Valor/ }));
+      expect(tableNames()).toEqual(['Aluguel', 'Mercado', 'Café']);
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute('aria-sort', 'descending');
+      expect(location()).toContain('ordem=valor-desc');
+
+      fireEvent.click(screen.getByRole('button', { name: /^Valor/ }));
+      expect(location()).not.toContain('ordem');
+      expect(tableNames()).toEqual(['Aluguel', 'Café', 'Mercado']);
+    });
+
+    test.each(['foo', 'valor'])('?ordem=%s inválido usa a ordem padrão e não quebra', async (bad) => {
+      server.entries = sortRows();
+      renderPage('EXPENSE', `/?mes=2026-12&ordem=${bad}`);
+      await screen.findByText('Aluguel');
+      expect(tableNames()).toEqual(['Aluguel', 'Café', 'Mercado']);
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute('aria-sort', 'none');
+    });
+
+    test('trocar o mês mantém ordem e ordenar mantém mes', async () => {
+      server.entries = sortRows();
+      renderPage('EXPENSE', '/?mes=2026-12&ordem=valor-desc');
+      await screen.findByText('Aluguel');
+      expect(tableNames()).toEqual(['Aluguel', 'Mercado', 'Café']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mês seguinte' }));
+      expect(location()).toContain('mes=2027-01');
+      expect(location()).toContain('ordem=valor-desc');
+
+      fireEvent.click(await screen.findByRole('button', { name: /^Nome/ }));
+      expect(location()).toContain('mes=2027-01');
+      expect(location()).toContain('ordem=nome-asc');
+    });
+
+    test('atrasados mantêm a ordem da API e sem botões de ordenação', async () => {
+      server.overdue = [
+        entry({ id: 'o2', displayName: 'Zeta', amountCents: 100, dueDate: '2026-10-20' }),
+        entry({ id: 'o1', displayName: 'Alfa', amountCents: 900, dueDate: '2026-10-10' }),
+      ];
+      server.entries = sortRows();
+      renderPage('EXPENSE', '/?mes=2026-12&ordem=valor-desc');
+      const section = await screen.findByRole('region', { name: 'Atrasados' });
+      await screen.findByText('Aluguel');
+      const order = within(section)
+        .getAllByRole('row')
+        .map((r) => /Zeta|Alfa/.exec(r.textContent ?? '')?.[0])
+        .filter(Boolean);
+      expect(order).toEqual(['Zeta', 'Alfa']);
+      expect(within(section).queryByRole('button', { name: /^Valor/ })).not.toBeInTheDocument();
+    });
+
+    test('no celular, o seletor "Ordenar por" reordena os cartões e atualiza a URL', async () => {
+      setViewport(false);
+      server.entries = sortRows();
+      renderPage();
+      await screen.findByText('Aluguel');
+      const select = screen.getByRole('combobox', { name: 'Ordenar por' });
+      expect(within(select).getAllByRole('option')).toHaveLength(9);
+
+      fireEvent.change(select, { target: { value: 'valor-desc' } });
+      const text = document.body.textContent ?? '';
+      expect(text.indexOf('Aluguel')).toBeLessThan(text.indexOf('Mercado'));
+      expect(text.indexOf('Mercado')).toBeLessThan(text.indexOf('Café'));
+      expect(location()).toContain('ordem=valor-desc');
+      expect(within(select).getByRole('option', { name: 'Valor (maior primeiro)' })).toBeInTheDocument();
+
+      fireEvent.change(select, { target: { value: '' } });
+      expect(location()).not.toContain('ordem');
+    });
+  });
+
+  describe('etiquetas', () => {
+    const tagged = () => [
+      entry({ id: 'e1', displayName: 'Netflix', amountCents: 5000, dueDate: '2026-12-05', tagIds: ['t-sub', 't-stream'] }),
+      entry({ id: 'e2', displayName: 'Mercado', amountCents: 25000, dueDate: '2026-12-06' }),
+      entry({ id: 'e3', displayName: 'Spotify', amountCents: 2000, dueDate: '2026-12-07', tagIds: ['t-sub', 't-gone'] }),
+    ];
+
+    test('mostra chips na tabela (na ordem das etiquetas, ignorando ids desconhecidos) e traço sem etiqueta', async () => {
+      server.entries = tagged();
+      renderPage();
+      await screen.findByText('Netflix');
+      const rows = within(screen.getByRole('table', { name: 'Lançamentos de despesas' })).getAllByRole('row');
+      const netflix = rows.find((r) => /Netflix/.test(r.textContent ?? ''))!;
+      expect(within(netflix).getByText('Assinatura')).toHaveStyle({ color: '#D9730D' });
+      expect(within(netflix).getByText('Streaming')).toBeInTheDocument();
+      const spotify = rows.find((r) => /Spotify/.test(r.textContent ?? ''))!;
+      expect(within(spotify).getByText('Assinatura')).toBeInTheDocument();
+      expect(screen.getByRole('columnheader', { name: 'Etiquetas' })).toBeInTheDocument();
+    });
+
+    test('mostra chips nos cartões do celular', async () => {
+      setViewport(false);
+      server.entries = tagged();
+      renderPage();
+      const card = (await screen.findByText('Netflix')).closest('li')!;
+      expect(within(card).getByText('Assinatura')).toBeInTheDocument();
+      expect(within(card).getByText('Streaming')).toBeInTheDocument();
+      expect(within(screen.getByText('Mercado').closest('li')!).queryByText('Assinatura')).not.toBeInTheDocument();
+    });
+
+    test('filtrar por etiqueta mantém só as linhas com ela e o rodapé soma só elas', async () => {
+      server.entries = tagged();
+      renderPage();
+      await screen.findByText('Mercado');
+      const filters = await screen.findByRole('group', { name: 'Etiqueta' });
+      fireEvent.click(within(filters).getByRole('button', { name: 'Assinatura' }));
+      expect(screen.queryByText('Mercado')).not.toBeInTheDocument();
+      expect(screen.getByText('Netflix')).toBeInTheDocument();
+      const footer = screen.getByTestId('entries-footer');
+      expect(footer).toHaveTextContent('CONTAGEM 2');
+      expect(footer).toHaveTextContent(/SOMA\s+R\$\s+70,00/);
+      // Alguma etiqueta selecionada basta.
+      fireEvent.click(within(filters).getByRole('button', { name: 'Streaming' }));
+      expect(footer).toHaveTextContent('CONTAGEM 2');
+    });
+
+    test('etiqueta excluída deixa de filtrar: todas as linhas voltam', async () => {
+      server.entries = tagged();
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      renderPage('EXPENSE', '/', client);
+      await screen.findByText('Mercado');
+      const filters = await screen.findByRole('group', { name: 'Etiqueta' });
+      fireEvent.click(within(filters).getByRole('button', { name: 'Streaming' }));
+      expect(screen.queryByText('Mercado')).not.toBeInTheDocument();
+
+      tags = tagList.filter((t) => t.id !== 't-stream');
+      await client.refetchQueries({ queryKey: queryKeys.tags() });
+      await waitFor(() => expect(screen.getByText('Mercado')).toBeInTheDocument());
+      expect(screen.getByText('Netflix')).toBeInTheDocument();
+      expect(screen.getByTestId('entries-footer')).toHaveTextContent('CONTAGEM 3');
+    });
+
+    test('atrasados aparecem mesmo com o filtro de etiqueta ativo', async () => {
+      server.overdue = [entry({ id: 'late', displayName: 'Luz 2/3', amountCents: 15000, dueDate: '2026-10-10' })];
+      server.entries = tagged();
+      renderPage();
+      await screen.findByText('Mercado');
+      fireEvent.click(within(await screen.findByRole('group', { name: 'Etiqueta' })).getByRole('button', { name: 'Assinatura' }));
+      expect(screen.queryByText('Mercado')).not.toBeInTheDocument();
+      expect(within(screen.getByRole('region', { name: 'Atrasados' })).getByText('Luz 2/3')).toBeInTheDocument();
+    });
+
+    test('cabeçalho "Valor" sem ordenação (atrasados) continua alinhado à direita', async () => {
+      server.overdue = [entry({ id: 'late', displayName: 'Luz 2/3', amountCents: 15000, dueDate: '2026-10-10' })];
+      renderPage();
+      const section = await screen.findByRole('region', { name: 'Atrasados' });
+      const valor = within(section).getByRole('columnheader', { name: 'Valor' });
+      expect(valor).not.toHaveClass('block');
+      expect(within(valor).getByText('Valor')).toHaveClass('text-right');
+      expect(within(section).getByRole('columnheader', { name: 'Nome' })).not.toHaveClass('text-right');
+    });
+  });
+
 });

@@ -28,6 +28,10 @@ test('primeiro cadastro funciona e cria os 5 métodos iniciais', async () => {
   ]);
   expect(methods.map((m) => m.sortOrder)).toEqual([0, 1, 2, 3, 4]);
   for (const m of methods) expect(m.color).toMatch(/^#[0-9A-Fa-f]{6}$/);
+
+  const tags = await prisma.tag.findMany();
+  expect(tags).toHaveLength(1);
+  expect(tags[0]).toMatchObject({ name: 'Assinatura', system: 'SUBSCRIPTION', sortOrder: 0 });
 });
 
 test('segundo cadastro é recusado', async () => {
