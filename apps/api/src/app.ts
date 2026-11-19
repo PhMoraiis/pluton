@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { auth } from './auth';
 import { defaultMonthRoutes, entryRoutes, notFound } from './routes/entries';
 import { importRoutes } from './routes/import';
@@ -7,6 +8,14 @@ import { seriesRoutes } from './routes/series';
 import { setupRoutes } from './routes/setup';
 import { summaryRoutes } from './routes/summary';
 import { securityHeaders, serveWeb } from './web';
+
+/** Limite de body da API (auth incluída); só `/api/import/*` tem o seu, maior (2 MB). */
+export const API_BODY_LIMIT = 64 * 1024;
+
+const apiBodyLimit = bodyLimit({
+  maxSize: API_BODY_LIMIT,
+  onError: (c) => c.json({ error: 'payload_too_large' }, 413),
+});
 
 export type AppOptions = {
   /** Pasta do build do PWA a servir (produção); sem ela, só a API. */
@@ -19,6 +28,8 @@ export function createApp(options: AppOptions = {}): Hono {
   const api = new Hono();
 
   app.use(securityHeaders);
+
+  api.use('*', (c, next) => (c.req.path.startsWith('/api/import/') ? next() : apiBodyLimit(c, next)));
 
   // Health check do Dokploy: sem autenticação e sem tocar no banco.
   api.get('/health', (c) => c.json({ ok: true }));
