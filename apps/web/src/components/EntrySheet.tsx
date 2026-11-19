@@ -1,6 +1,15 @@
 import type { PaymentMethodDTO } from '@pluton/shared';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
-import { installmentHint, isPix, maskAmount, sortedMethods, withMethod, type EntryDraft } from '../lib/entryDraft';
+import {
+  installmentHint,
+  isPix,
+  maskAmount,
+  MAX_NAME_LENGTH,
+  MAX_PIX_KEY_LENGTH,
+  sortedMethods,
+  withMethod,
+  type EntryDraft,
+} from '../lib/entryDraft';
 import { Modal } from './Modal';
 
 interface Props {
@@ -59,7 +68,13 @@ export function EntrySheet({
         <div className="flex flex-col gap-1">
           <label className={labelCls}>
             Nome
-            <input className={field} value={draft.name} onChange={(e) => set('name', e.target.value)} autoComplete="off" />
+            <input
+              className={field}
+              value={draft.name}
+              onChange={(e) => set('name', e.target.value)}
+              autoComplete="off"
+              maxLength={MAX_NAME_LENGTH}
+            />
           </label>
           {hint && <span className="text-xs text-accent">{hint}</span>}
         </div>
@@ -94,7 +109,13 @@ export function EntrySheet({
         {isPix(byId, draft.methodId) && (
           <label className={labelCls}>
             Chave Pix
-            <input className={field} value={draft.pixKey} onChange={(e) => set('pixKey', e.target.value)} autoComplete="off" />
+            <input
+              className={field}
+              value={draft.pixKey}
+              onChange={(e) => set('pixKey', e.target.value)}
+              autoComplete="off"
+              maxLength={MAX_PIX_KEY_LENGTH}
+            />
           </label>
         )}
         {mode === 'create' && !hint && (

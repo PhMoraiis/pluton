@@ -11,6 +11,8 @@ interface Props {
   options?: { value: string; label: string }[];
   disabled: boolean;
   align?: 'left' | 'right';
+  /** Limite de caracteres do campo de texto. */
+  maxLength?: number;
   /** Chamado só quando o valor mudou (Enter, blur ou escolha no select). */
   onCommit: (value: string) => void;
 }
@@ -27,6 +29,7 @@ export function EditableCell({
   options = [],
   disabled,
   align = 'left',
+  maxLength,
   onCommit,
 }: Props) {
   const [editing, setEditing] = useState(false);
@@ -97,6 +100,7 @@ export function EditableCell({
         aria-label={label}
         type={type}
         inputMode={field === 'Valor' ? 'decimal' : undefined}
+        maxLength={maxLength}
         className={`${editor} ${align === 'right' ? 'text-right' : ''}`}
         value={value}
         onChange={(e) => setValue(e.target.value)}

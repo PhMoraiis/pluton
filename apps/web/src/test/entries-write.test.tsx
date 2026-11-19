@@ -67,6 +67,8 @@ let writeResponse: { status: number; body: unknown } | null;
 /** Promessa que segura a resposta do `pay` (para ver o update otimista antes dela). */
 let payGate: Promise<void> | null;
 let online: boolean;
+/** Métodos devolvidos pela API; `null` = a consulta falha (lista ainda não carregada). */
+let methodList: PaymentMethodDTO[] | null;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -106,7 +108,7 @@ function mockFetch() {
         case '/api/summary':
           return json({ expenseCents: 0, incomeCents: 0, balanceCents: 0, realizedCents: 0 });
         case '/api/payment-methods':
-          return json(methods);
+          return methodList ? json(methodList) : json({ error: 'internal' }, 500);
         default:
           return new Response('not found', { status: 404 });
       }
@@ -144,6 +146,7 @@ beforeEach(() => {
   writeResponse = null;
   payGate = null;
   online = true;
+  methodList = methods;
   vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);
   mockFetch();
   setViewport(true);
@@ -414,6 +417,25 @@ describe('EntriesPage (escrita)', () => {
     expect(calls[0]).toEqual({ method: 'POST', path: '/api/series/s9/end', body: { lastMonth: '2027-02' } });
   });
 
+  test('Encerrar série: mês em formato inválido mostra mensagem e não envia', async () => {
+    entries = [
+      entry({ id: 'm1', displayName: 'Internet', amountCents: 9990, dueDate: '2026-12-10', seriesId: 's9', seriesType: 'MONTHLY', sequence: 4 }),
+    ];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Encerrar série: Internet' }));
+    const dialog = await screen.findByRole('dialog');
+    const month = within(dialog).getByLabelText('Último mês');
+    expect(month).toHaveAttribute('placeholder', 'AAAA-MM');
+    expect(month).toHaveAttribute('pattern', '\\d{4}-(0[1-9]|1[0-2])');
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.change(month, { target: { value: '12/2026' } });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Mês inválido. Use o formato AAAA-MM (ex.: 2027-02).');
+    expect(within(dialog).getByRole('button', { name: 'Encerrar série' })).toBeDisabled();
+    fireEvent.submit(month.closest('form')!);
+    expect(calls).toHaveLength(0);
+  });
+
   test('celular: checkbox Pago funciona e Editar abre formulário que salva', async () => {
     setViewport(false);
     entries = [
@@ -560,6 +582,61 @@ describe('EntriesPage (escrita) — segurança dos dados', () => {
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]!.body).toEqual({ paymentMethodId: 'm-card', pixKey: null });
+  });
+
+  test('Pix renomeado ("PIX") + edição só do valor no formulário mantém a chave Pix', async () => {
+    methodList = [{ ...methods[0]!, name: 'PIX' }, methods[1]!];
+    entries = [
+      entry({ id: 'e1', displayName: 'Diarista', amountCents: 20000, dueDate: '2026-12-05', paymentMethodId: 'm-pix', pixKey: 'chave@exemplo.com' }),
+    ];
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: 'Copiar chave' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Editar: Diarista' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    expect(within(sheet).getByRole('textbox', { name: 'Chave Pix' })).toHaveValue('chave@exemplo.com');
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Valor' }), { target: { value: '250,00' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ method: 'PATCH', path: '/api/entries/e1', body: { amountCents: 25000 } });
+  });
+
+  test('métodos não carregados + edição só do valor no formulário mantém a chave Pix', async () => {
+    methodList = null;
+    entries = [
+      entry({ id: 'e1', displayName: 'Diarista', amountCents: 20000, dueDate: '2026-12-05', paymentMethodId: 'm-pix', pixKey: 'chave@exemplo.com' }),
+    ];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar: Diarista' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Valor' }), { target: { value: '250,00' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ method: 'PATCH', path: '/api/entries/e1', body: { amountCents: 25000 } });
+  });
+
+  test('campos de nome limitam a 120 caracteres e chave Pix a 140 (limites da API)', async () => {
+    entries = [
+      entry({ id: 'e1', displayName: 'Diarista', amountCents: 20000, dueDate: '2026-12-05', paymentMethodId: 'm-pix', pixKey: 'chave@exemplo.com' }),
+    ];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Método' })).toHaveValue('m-pix'));
+    expect(screen.getByRole('textbox', { name: 'Nome' })).toHaveAttribute('maxLength', '120');
+    expect(screen.getByRole('textbox', { name: 'Chave Pix' })).toHaveAttribute('maxLength', '140');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar nome: Diarista' }));
+    expect(screen.getByRole('textbox', { name: 'Nome: Diarista' })).toHaveAttribute('maxLength', '120');
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Nome: Diarista' }), { key: 'Escape' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar: Diarista' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    expect(within(sheet).getByRole('textbox', { name: 'Nome' })).toHaveAttribute('maxLength', '120');
+    expect(within(sheet).getByRole('textbox', { name: 'Chave Pix' })).toHaveAttribute('maxLength', '140');
   });
 
   test('Copiar chave só aparece quando o método é Pix', async () => {

@@ -1,12 +1,13 @@
 import { monthKeyOf, type EntryDTO, type MonthKey } from '@pluton/shared';
 import { useState, type FormEvent } from 'react';
+import { isMonthKey, MONTH_PATTERN, MONTH_PLACEHOLDER, MONTH_TITLE } from '../lib/monthInput';
 import { Modal } from './Modal';
 
-const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
-
+/** `AAAA-MM` com ano 2000..2100 (mesma faixa da API). */
 function isValidMonth(value: string): boolean {
-  const m = MONTH_RE.exec(value);
-  return m !== null && Number(m[1]) >= 2000 && Number(m[1]) <= 2100;
+  if (!isMonthKey(value)) return false;
+  const year = Number(value.slice(0, 4));
+  return year >= 2000 && year <= 2100;
 }
 
 interface Props {
@@ -38,9 +39,18 @@ export function EndSeriesDialog({ entry, canWrite, onConfirm, onCancel }: Props)
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
+            placeholder={MONTH_PLACEHOLDER}
+            pattern={MONTH_PATTERN}
+            title={MONTH_TITLE}
+            aria-invalid={!valid}
             className="rounded-md border border-line bg-bg px-2.5 py-2 text-sm text-ink"
           />
         </label>
+        {!valid && (
+          <p role="alert" className="text-sm text-danger">
+            Mês inválido. Use o formato AAAA-MM (ex.: 2027-02).
+          </p>
+        )}
         <div className="flex gap-2">
           <button
             type="submit"

@@ -223,6 +223,21 @@ describe('PeriodPage', () => {
     expect(requested).toContain('GET /api/summary?from=2026-01&to=2026-11');
   });
 
+  test('campos de mês orientam o formato AAAA-MM (Safari mostra caixa de texto)', async () => {
+    renderWith(<PeriodPage />);
+    await waitFor(() => expect(requested).toContain('GET /api/summary?from=2026-01&to=2026-11'));
+    requested.length = 0;
+    for (const label of ['Início', 'Fim']) {
+      const field = screen.getByLabelText(label);
+      expect(field).toHaveAttribute('placeholder', 'AAAA-MM');
+      expect(field).toHaveAttribute('pattern', '\\d{4}-(0[1-9]|1[0-2])');
+      expect(field).toHaveAttribute('title', 'Use o formato AAAA-MM, por exemplo 2026-12.');
+    }
+    fireEvent.change(screen.getByLabelText('Início'), { target: { value: '2026-13' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Escolha o mês inicial e o final no formato AAAA-MM (ex.: 2026-01).');
+    expect(requested).toEqual([]);
+  });
+
   test('início depois do fim mostra aviso e não consulta', async () => {
     renderWith(<PeriodPage />);
     await waitFor(() => expect(requested).toContain('GET /api/summary?from=2026-01&to=2026-11'));

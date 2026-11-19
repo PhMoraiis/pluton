@@ -1,6 +1,10 @@
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { QueryClient } from '@tanstack/react-query';
-import type { PersistQueryClientProviderProps } from '@tanstack/react-query-persist-client';
+import {
+  removeOldestQuery,
+  type PersistQueryClientProviderProps,
+  type Persister,
+} from '@tanstack/react-query-persist-client';
 
 export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -32,11 +36,21 @@ export const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Persistência do cache em `storage` (no app, `localStorage`). Cota estourada: descarta a
+ * query mais antiga e tenta de novo — sem isso a gravação falha para sempre e a cópia
+ * offline fica congelada na última versão que coube.
+ */
+export function createPersister(storage: Storage | undefined): Persister {
+  return createSyncStoragePersister({
+    storage,
+    key: 'pluton-query-cache',
+    retry: removeOldestQuery,
+  });
+}
+
 /** Persistência do cache em `localStorage` — é o que permite ver os dados offline. */
-export const persister = createSyncStoragePersister({
-  storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-  key: 'pluton-query-cache',
-});
+export const persister = createPersister(typeof window !== 'undefined' ? window.localStorage : undefined);
 
 export const persistOptions: PersistQueryClientProviderProps['persistOptions'] = {
   persister,

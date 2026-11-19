@@ -318,6 +318,7 @@ describe('ImportPage', () => {
     fireEvent.change(amount, { target: { value: 'abc' } });
     expect(screen.getByRole('button', { name: 'Aplicar correções' })).toBeDisabled();
     fireEvent.change(amount, { target: { value: 'R$ 1.234,56' } });
+    expect(screen.getByLabelText('Nome de Presente')).toHaveAttribute('maxLength', '120');
     fireEvent.change(screen.getByLabelText('Nome de Presente'), { target: { value: '  Presente mãe ' } });
     fireEvent.change(screen.getByLabelText('Data de Presente'), { target: { value: '2026-12-25' } });
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar correções' }));

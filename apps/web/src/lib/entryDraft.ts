@@ -19,6 +19,10 @@ export interface EntryDraft {
   monthly: boolean;
 }
 
+/** Limites da API (`nameSchema` / `pixKeySchema` em apps/api/src/routes/entries.ts). */
+export const MAX_NAME_LENGTH = 120;
+export const MAX_PIX_KEY_LENGTH = 140;
+
 const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** Data real do calendário, anos 2000..2100 (mesma faixa da API). */
@@ -57,8 +61,9 @@ export function sortedMethods(methods: PaymentMethodDTO[]): PaymentMethodDTO[] {
   return [...methods].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+/** Método Pix pelo nome, tolerante a renomeação de caixa/espaços ("PIX", " pix "). */
 export function isPix(methods: Map<string, PaymentMethodDTO>, id: string | null | undefined): boolean {
-  return id != null && methods.get(id)?.name === 'Pix';
+  return id != null && methods.get(id)?.name.trim().toLowerCase() === 'pix';
 }
 
 /** Troca o método; saindo de Pix, a chave é descartada (ela só existe com Pix). */
@@ -143,7 +148,9 @@ export function draftToPatch(
   const pixKey = draft.pixKey.trim();
   if (isPix(methods, methodId)) {
     if (pixKey !== (entry.pixKey ?? '')) patch.pixKey = pixKey;
-  } else if (entry.pixKey) {
+  } else if (patch.paymentMethodId !== undefined && entry.pixKey) {
+    // Só descarta a chave quando o método realmente mudou para não-Pix. Com o método
+    // inalterado (ex.: lista de métodos ainda não carregada), a chave gravada fica como está.
     patch.pixKey = null;
   }
   return { ok: true, value: patch };

@@ -1,7 +1,14 @@
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { formatBRL, formatDatePtBR, type EntryDTO } from '@pluton/shared';
 import { useMemo, type ReactNode } from 'react';
-import { centsToInput, isValidDueDate, methodPatch, parseAmount, sortedMethods } from '../lib/entryDraft';
+import {
+  centsToInput,
+  isValidDueDate,
+  MAX_NAME_LENGTH,
+  methodPatch,
+  parseAmount,
+  sortedMethods,
+} from '../lib/entryDraft';
 import { EditableCell } from './EditableCell';
 import { useEntryActions } from './EntryActions';
 import { KindIcon } from './KindIcon';
@@ -42,6 +49,7 @@ function NameCell({ entry }: { entry: EntryDTO }) {
         </span>
       }
       initial={entry.displayName}
+      maxLength={MAX_NAME_LENGTH}
       disabled={!canWrite}
       onCommit={(v) => {
         const name = v.trim();

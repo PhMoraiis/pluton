@@ -3,6 +3,7 @@ import { type FormEvent, type ReactNode, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { apiFetch } from '../lib/api';
 import { authClient, rememberSignedIn } from '../lib/auth-client';
+import { authErrorMessage } from '../lib/errors';
 import { useOnline } from '../lib/online';
 
 type SetupStatus = { hasUser: boolean };
@@ -117,7 +118,7 @@ function SignInForm() {
     try {
       const res = await authClient.signIn.email({ email: email.trim(), password });
       if (res.error) {
-        setError(res.error.status === 401 ? 'E-mail ou senha incorretos.' : (res.error.message ?? 'Não foi possível entrar.'));
+        setError(authErrorMessage(res.error, 'Não foi possível entrar.'));
         return;
       }
       await afterAuth();
@@ -174,7 +175,7 @@ function SignUpForm() {
     try {
       const res = await authClient.signUp.email({ name: name.trim(), email: email.trim(), password });
       if (res.error) {
-        setError(res.error.message ?? 'Não foi possível criar a conta.');
+        setError(authErrorMessage(res.error, 'Não foi possível criar a conta.'));
         // Ex.: conta criada em outra aba — atualiza para mostrar o formulário de entrar.
         if (res.error.status === 403) void queryClient.invalidateQueries({ queryKey: ['setup-status'] });
         return;

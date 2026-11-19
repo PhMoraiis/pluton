@@ -6,7 +6,7 @@ import {
   persistQueryClientSave,
 } from '@tanstack/react-query-persist-client';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { persistOptions, queryClient } from '../lib/query';
+import { createPersister, persistOptions, queryClient } from '../lib/query';
 
 const PENDING = Symbol('pending');
 
@@ -111,5 +111,58 @@ describe('cache persistido (leitura offline)', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(queryClient.getQueryData(['payment-methods'])).toEqual([{ id: 'm1' }]);
+  });
+});
+
+describe('cache persistido: armazenamento cheio', () => {
+  function query(key: string, updatedAt: number, size: number): PersistedClient['clientState']['queries'][number] {
+    return {
+      queryKey: [key],
+      queryHash: JSON.stringify([key]),
+      dehydratedAt: updatedAt,
+      state: {
+        data: 'x'.repeat(size),
+        dataUpdateCount: 1,
+        dataUpdatedAt: updatedAt,
+        error: null,
+        errorUpdateCount: 0,
+        errorUpdatedAt: 0,
+        fetchFailureCount: 0,
+        fetchFailureReason: null,
+        fetchMeta: null,
+        isInvalidated: false,
+        status: 'success',
+        fetchStatus: 'idle',
+      },
+    };
+  }
+
+  test('estouro de cota descarta as queries mais antigas em vez de congelar a cópia offline', () => {
+    vi.useFakeTimers();
+    try {
+      const stored = new Map<string, string>();
+      // Cabe ~1 query de 3 KB; acima de 5 KB o "localStorage" acusa cota estourada.
+      const storage = {
+        getItem: (k: string) => stored.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          if (v.length > 5_000) throw new DOMException('cheio', 'QuotaExceededError');
+          stored.set(k, v);
+        },
+        removeItem: (k: string) => void stored.delete(k),
+      } as unknown as Storage;
+      const persister = createPersister(storage);
+
+      void persister.persistClient({
+        buster: 'v1',
+        timestamp: 2,
+        clientState: { mutations: [], queries: [query('antiga', 1, 3_000), query('nova', 2, 3_000)] },
+      });
+      vi.runAllTimers();
+
+      const saved = JSON.parse(stored.get('pluton-query-cache') ?? 'null') as PersistedClient | null;
+      expect(saved?.clientState.queries.map((q) => q.queryKey)).toEqual([['nova']]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

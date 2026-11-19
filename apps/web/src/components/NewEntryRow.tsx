@@ -6,6 +6,8 @@ import {
   installmentHint,
   isPix,
   maskAmount,
+  MAX_NAME_LENGTH,
+  MAX_PIX_KEY_LENGTH,
   sortedMethods,
   withMethod,
   type EntryDraft,
@@ -162,6 +164,7 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
             aria-label="Nome"
             placeholder="Nome (ex.: Fone 1/7)"
             autoComplete="off"
+            maxLength={MAX_NAME_LENGTH}
             className={cellInput}
             disabled={disabled}
             value={current.name}
@@ -204,6 +207,7 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
               aria-label="Chave Pix"
               placeholder="Chave Pix (opcional)"
               autoComplete="off"
+              maxLength={MAX_PIX_KEY_LENGTH}
               className={`${cellInput} mt-1`}
               disabled={disabled}
               value={current.pixKey}

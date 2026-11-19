@@ -2,9 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { formatBRL, monthKeyOf, todayInSaoPaulo, type MonthKey, type Summary } from '@pluton/shared';
 import { useState } from 'react';
 import { apiFetch } from '../lib/api';
+import { isMonthKey, MONTH_PATTERN, MONTH_PLACEHOLDER, MONTH_TITLE } from '../lib/monthInput';
 import { queryKeys } from '../lib/queryKeys';
 
-const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const monthAttrs = { placeholder: MONTH_PLACEHOLDER, pattern: MONTH_PATTERN, title: MONTH_TITLE };
 const input = 'rounded-md border border-line bg-surface px-2.5 py-1 text-sm text-ink';
 
 export function PeriodPage() {
@@ -12,7 +13,7 @@ export function PeriodPage() {
   const [from, setFrom] = useState<MonthKey>(`${current.slice(0, 4)}-01`);
   const [to, setTo] = useState<MonthKey>(current);
 
-  const complete = MONTH_RE.test(from) && MONTH_RE.test(to);
+  const complete = isMonthKey(from) && isMonthKey(to);
   const inverted = complete && from > to;
   const summary = useQuery({
     queryKey: queryKeys.summary(from, to),
@@ -34,17 +35,18 @@ export function PeriodPage() {
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1 text-xs text-muted">
           Início
-          <input type="month" value={from} onChange={(e) => setFrom(e.target.value)} className={input} />
+          <input type="month" value={from} onChange={(e) => setFrom(e.target.value)} {...monthAttrs} className={input} />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted">
           Fim
-          <input type="month" value={to} onChange={(e) => setTo(e.target.value)} className={input} />
+          <input type="month" value={to} onChange={(e) => setTo(e.target.value)} {...monthAttrs} className={input} />
         </label>
       </div>
 
       {!complete ? (
         <p role="alert" className="text-sm text-danger">
-          Escolha o mês inicial e o final.
+          {/* No Safari do macOS o campo é texto livre: a mensagem cobre vazio e formato errado. */}
+          Escolha o mês inicial e o final no formato AAAA-MM (ex.: 2026-01).
         </p>
       ) : inverted ? (
         <p role="alert" className="text-sm text-danger">

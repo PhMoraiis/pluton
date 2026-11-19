@@ -3,6 +3,7 @@ import { formatBRL, parseBRL, type ImportPlan, type NotionRow, type PlannedEntry
 import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { apiFetch } from '../lib/api';
+import { MAX_NAME_LENGTH } from '../lib/entryDraft';
 import { friendlyError } from '../lib/errors';
 import { useCanWrite } from '../lib/online';
 
@@ -130,6 +131,7 @@ function InvalidRow({
           <input
             aria-label={`Nome de ${label}`}
             value={draft.name}
+            maxLength={MAX_NAME_LENGTH}
             disabled={!canWrite}
             onChange={(e) => onChange({ ...draft, name: e.target.value })}
             className={input}
