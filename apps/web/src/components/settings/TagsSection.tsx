@@ -29,6 +29,7 @@ export function TagsSection() {
     Promise.all([
       client.invalidateQueries({ queryKey: queryKeys.tags() }),
       client.invalidateQueries({ queryKey: ['entries'] }),
+      client.invalidateQueries({ queryKey: ['monthly-series'] }),
     ]);
 
   const create = useMutation({

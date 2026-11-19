@@ -195,7 +195,7 @@ test("parcelada: etiqueta via 'following' e total mudado para 5 → parcelas 4 e
   expect(await tagsBySequence(seriesId)).toEqual({ 1: [t1], 2: [t1], 3: [t1], 4: [t1], 5: [t1] });
 });
 
-test('parcelada: etiqueta e total novo na mesma edição → todas herdam', async () => {
+test('parcelada: etiqueta e total novo na mesma edição → parcela paga fica sem etiqueta, as demais herdam', async () => {
   const entries = await createOk({ name: 'Fone 1/3', amountCents: 15990, dueDate: '2026-11-05' });
   const seriesId = entries[0]!.seriesId!;
   await pay(bySeq(entries, 1).id);

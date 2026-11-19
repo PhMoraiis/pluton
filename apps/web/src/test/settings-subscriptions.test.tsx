@@ -162,6 +162,20 @@ describe('SettingsPage – Assinaturas', () => {
     expect(puts()[0]!.body).toEqual({ tagIds: ['t-casa'] });
   });
 
+  test('etiqueta excluída no cache da série não vai no PUT (marcar e remover)', async () => {
+    series[0]!.tagIds = ['t-gone', 't-casa'];
+    series[1]!.tagIds = ['t-sub', 't-gone'];
+    renderSettings();
+    await screen.findByRole('list', { name: 'Assinaturas marcadas' });
+    fireEvent.change(within(section()).getByLabelText('Marcar como assinatura'), { target: { value: 's-acad' } });
+    fireEvent.click(within(section()).getByRole('button', { name: 'Marcar' }));
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0]).toMatchObject({ path: '/api/series/s-acad/tags', body: { tagIds: ['t-casa', 't-sub'] } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Remover Spotify das assinaturas' }));
+    await waitFor(() => expect(puts()).toHaveLength(2));
+    expect(puts()[1]).toMatchObject({ path: '/api/series/s-spot/tags', body: { tagIds: [] } });
+  });
+
   test('lista vazia mostra a mensagem e total zero', async () => {
     series = [];
     renderSettings();

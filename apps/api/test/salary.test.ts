@@ -331,3 +331,26 @@ test('série mensal comum: "só esta" no valor não marca ajuste', async () => {
     seriesRole: 'NONE',
   });
 });
+
+test('PUT nunca altera lançamento não pago de mês passado', async () => {
+  expect((await putSalary(BASE)).status).toBe(200);
+  const series = await prisma.series.findFirstOrThrow({ where: { role: 'SALARY', endedOn: null } });
+  const past = await prisma.entry.create({
+    data: {
+      userId: series.userId,
+      kind: 'INCOME',
+      name: 'Salário',
+      amountCents: 400000,
+      dueDate: new Date('2026-10-31T00:00:00Z'),
+      seriesId: series.id,
+      sequence: 0,
+    },
+  });
+
+  const res = await putSalary({ ...BASE, amountCents: 650000, dayOfMonth: 10 });
+  expect(res.status).toBe(200);
+
+  const after = await prisma.entry.findUniqueOrThrow({ where: { id: past.id } });
+  expect(after.amountCents).toBe(400000);
+  expect(after.dueDate.toISOString()).toBe('2026-10-31T00:00:00.000Z');
+});

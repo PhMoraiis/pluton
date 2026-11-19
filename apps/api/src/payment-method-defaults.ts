@@ -20,7 +20,7 @@ export const INITIAL_PAYMENT_METHODS = [
   { name: 'Dinheiro', color: NOTION_COLORS.yellow },
 ] as const;
 
-/** Etiqueta de sistema criada junto com o usuário (não editável nem removível). */
+/** Etiqueta de sistema criada junto com o usuário (pode ser renomeada e recolorida, mas não excluída). */
 export const SUBSCRIPTION_TAG = {
   name: 'Assinatura',
   color: '#D9730D',

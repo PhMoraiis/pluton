@@ -2,7 +2,7 @@ import { addMonthsClamped, monthKeyOf, todayInSaoPaulo, type MonthKey, type Sala
 import { prisma } from '../db';
 import type { Prisma, Series } from '../generated/prisma/client';
 import { fromIsoDate, toIsoDate } from './dto';
-import { assertPaymentMethodOwned, endSeries, EntryInputError, lockSeries } from './entries';
+import { assertPaymentMethodOwned, endSeriesIn, EntryInputError, lockSeries } from './entries';
 import { horizonMonth, materializeSeries } from './materialize';
 
 /** Nome da série de salário criada. */
@@ -146,9 +146,13 @@ async function updateSalary(
   return series;
 }
 
-/** Encerra o salário ativo em `lastMonth` (via `endSeries`); `false` sem salário ativo. */
+/** Encerra o salário ativo em `lastMonth` (via `endSeriesIn`, sob o advisory lock do salário); `false` sem salário ativo. */
 export async function endSalary(userId: string, lastMonth: MonthKey): Promise<boolean> {
-  const active = await findActive(prisma, userId);
-  if (!active) return false;
-  return (await endSeries(userId, active.id, lastMonth)) === 'ok';
+  return prisma.$transaction(async (tx) => {
+    // Mesma trava do PUT: os dois são serializados por usuário.
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtext(${`salary:${userId}`}))`;
+    const active = await findActive(tx, userId);
+    if (!active) return false;
+    return (await endSeriesIn(tx, userId, active.id, lastMonth)) === 'ok';
+  });
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatBRL, type MonthlySeriesDTO, type TagDTO } from '@pluton/shared';
 import { useState } from 'react';
 import { apiFetch } from '../../lib/api';
+import { knownTagIds } from '../../lib/entryDraft';
 import { friendlyError } from '../../lib/errors';
 import { invalidateEntryQueries } from '../../lib/entryMutations';
 import { useCanWrite } from '../../lib/online';
@@ -29,6 +30,8 @@ export function SubscriptionsSection() {
   const candidates = systemTagId ? all.filter((s) => !s.tagIds.includes(systemTagId)) : [];
   const total = marked.reduce((sum, s) => sum + s.currentMonthCents, 0);
 
+  // Etiqueta excluída ainda pode estar no cache da série; a API recusa id desconhecido.
+  const knownIds = new Map((tags.data ?? []).map((t) => [t.id, t] as const));
   const setTags = useMutation({
     mutationFn: ({ id, tagIds }: { id: string; tagIds: string[] }) =>
       apiFetch<MonthlySeriesDTO>(`/api/series/${id}/tags`, { method: 'PUT', body: JSON.stringify({ tagIds }) }),
@@ -38,11 +41,11 @@ export function SubscriptionsSection() {
   const mark = () => {
     const s = candidates.find((c) => c.id === picked);
     if (!s || !systemTagId) return;
-    setTags.mutate({ id: s.id, tagIds: [...s.tagIds, systemTagId] }, { onSuccess: () => setPicked('') });
+    setTags.mutate({ id: s.id, tagIds: [...knownTagIds(s.tagIds, knownIds), systemTagId] }, { onSuccess: () => setPicked('') });
   };
   const unmark = (s: MonthlySeriesDTO) => {
     if (!systemTagId) return;
-    setTags.mutate({ id: s.id, tagIds: s.tagIds.filter((id) => id !== systemTagId) });
+    setTags.mutate({ id: s.id, tagIds: knownTagIds(s.tagIds, knownIds).filter((id) => id !== systemTagId) });
   };
 
   return (

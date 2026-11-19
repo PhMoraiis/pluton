@@ -25,17 +25,17 @@ const duplicate = { error: 'duplicate_name' } as const;
 const notFound = { error: 'not_found' } as const;
 const systemTag = { error: 'system_tag' } as const;
 
-/** O unique do banco diferencia maiúsculas; a regra de negócio, não. */
+/**
+ * O unique do banco diferencia maiúsculas; a regra de negócio, não. Comparação em JS
+ * (ILIKE trataria `%` e `_` do nome como curinga).
+ */
 async function nameTaken(userId: string, name: string, excludeId?: string): Promise<boolean> {
-  const found = await prisma.tag.findFirst({
-    where: {
-      userId,
-      name: { equals: name, mode: 'insensitive' },
-      ...(excludeId ? { NOT: { id: excludeId } } : {}),
-    },
-    select: { id: true },
+  const wanted = name.toLocaleLowerCase('pt-BR');
+  const tags = await prisma.tag.findMany({
+    where: { userId, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
+    select: { name: true },
   });
-  return found !== null;
+  return tags.some((t) => t.name.toLocaleLowerCase('pt-BR') === wanted);
 }
 
 export const tagRoutes = new Hono<AppEnv>()
@@ -78,7 +78,8 @@ export const tagRoutes = new Hono<AppEnv>()
       if (isUniqueViolation(err)) return c.json(duplicate, 409);
       throw err;
     }
-    const updated: TagDTO = await prisma.tag.findUniqueOrThrow({ where: { id }, select });
+    const updated: TagDTO | null = await prisma.tag.findFirst({ where: { id, userId }, select });
+    if (!updated) return c.json(notFound, 404);
     return c.json(updated);
   })
   .delete('/:id', async (c) => {

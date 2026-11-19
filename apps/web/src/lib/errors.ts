@@ -12,6 +12,7 @@ const MESSAGES: Record<string, string> = {
   not_found: 'Lançamento não encontrado. Ele pode ter sido excluído.',
   duplicate_name: 'Já existe um método com esse nome.',
   payload_too_large: 'Arquivo grande demais (máximo 2 MB).',
+  invalid_tag: 'Uma das etiquetas não existe mais. Recarregue a página.',
   system_tag: 'A etiqueta Assinatura não pode ser excluída.',
   start_month_in_past: 'O mês de início não pode estar no passado.',
   overlaps_previous_salary: 'Já existe salário até esse mês. Escolha um mês de início posterior.',

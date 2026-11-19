@@ -357,7 +357,7 @@ describe('EntriesPage (leitura)', () => {
       expect(location()).toContain('ordem=nome-asc');
     });
 
-    test('atrasados continuam por data e sem botões de ordenação', async () => {
+    test('atrasados mantêm a ordem da API e sem botões de ordenação', async () => {
       server.overdue = [
         entry({ id: 'o2', displayName: 'Zeta', amountCents: 100, dueDate: '2026-10-20' }),
         entry({ id: 'o1', displayName: 'Alfa', amountCents: 900, dueDate: '2026-10-10' }),

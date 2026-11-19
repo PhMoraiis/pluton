@@ -586,18 +586,26 @@ export async function endSeries(
   seriesId: string,
   lastMonth: MonthKey,
 ): Promise<'ok' | 'not_found' | 'not_monthly'> {
-  return prisma.$transaction(async (tx) => {
-    const owned = await tx.series.count({ where: { id: seriesId, userId } });
-    if (owned === 0) return 'not_found';
-    await lockSeries(tx, seriesId);
-    const series = await tx.series.findFirst({ where: { id: seriesId, userId } });
-    if (!series) return 'not_found';
-    if (series.type !== 'MONTHLY') return 'not_monthly';
+  return prisma.$transaction((tx) => endSeriesIn(tx, userId, seriesId, lastMonth));
+}
 
-    const endedOn = fromIsoDate(monthRange(lastMonth, lastMonth).end);
-    await tx.series.update({ where: { id: seriesId }, data: { endedOn } });
-    await tx.entry.deleteMany({ where: { seriesId, paidOn: null, dueDate: { gt: endedOn } } });
-    await deleteSeriesIfEmpty(tx, seriesId);
-    return 'ok';
-  });
+/** Corpo de `endSeries` numa transação já aberta (o salário o usa sob o seu advisory lock). */
+export async function endSeriesIn(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  seriesId: string,
+  lastMonth: MonthKey,
+): Promise<'ok' | 'not_found' | 'not_monthly'> {
+  const owned = await tx.series.count({ where: { id: seriesId, userId } });
+  if (owned === 0) return 'not_found';
+  await lockSeries(tx, seriesId);
+  const series = await tx.series.findFirst({ where: { id: seriesId, userId } });
+  if (!series) return 'not_found';
+  if (series.type !== 'MONTHLY') return 'not_monthly';
+
+  const endedOn = fromIsoDate(monthRange(lastMonth, lastMonth).end);
+  await tx.series.update({ where: { id: seriesId }, data: { endedOn } });
+  await tx.entry.deleteMany({ where: { seriesId, paidOn: null, dueDate: { gt: endedOn } } });
+  await deleteSeriesIfEmpty(tx, seriesId);
+  return 'ok';
 }

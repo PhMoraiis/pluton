@@ -126,3 +126,13 @@ test('etiqueta de outro usuário → 404 em PATCH e DELETE', async () => {
   expect((await api(`/api/tags/${foreign.id}`, { method: 'DELETE' }, cookie)).status).toBe(404);
   expect(await prisma.tag.findUniqueOrThrow({ where: { id: foreign.id } })).toMatchObject({ name: 'Alheia' });
 });
+
+test('nome com % ou _ não é curinga na checagem de duplicado', async () => {
+  expect((await post({ name: 'Casa', color: '#0B6E99' })).status).toBe(201);
+  expect((await post({ name: 'Pet shop', color: '#0B6E99' })).status).toBe(201);
+  expect((await post({ name: 'C_sa', color: '#0B6E99' })).status).toBe(201);
+  expect((await post({ name: 'Pet_shop', color: '#0B6E99' })).status).toBe(201);
+  expect((await post({ name: 'C%', color: '#0B6E99' })).status).toBe(201);
+  const dup = await post({ name: 'CASA', color: '#0B6E99' });
+  expect(dup.status).toBe(409);
+});
