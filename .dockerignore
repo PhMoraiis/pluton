@@ -1,0 +1,19 @@
+# Dados pessoais e segredos nunca entram na imagem
+dados_notion_pluton/
+.env
+.env.*
+
+# Gerados/instalados dentro do build
+node_modules
+**/node_modules
+**/dist
+apps/api/src/generated
+
+# Fora do runtime
+.git
+.superpowers
+.claude
+docs
+**/.DS_Store
+docker-compose.dev.yml
+docker
