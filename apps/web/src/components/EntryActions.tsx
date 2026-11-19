@@ -194,6 +194,7 @@ export function EntryActionsProvider({ kind, canWrite, methods, tags, children }
           mode="edit"
           initial={draftFromEntry(sheet.entry)}
           methods={[...methods.values()]}
+          tags={[...tags.values()]}
           canWrite={canWrite}
           error={sheet.error}
           onSubmit={(draft) => submitSheet(sheet.entry, draft)}

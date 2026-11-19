@@ -2,7 +2,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { EntryDTO, PaymentMethodDTO } from '@pluton/shared';
+import type { EntryDTO, PaymentMethodDTO, TagDTO } from '@pluton/shared';
 
 const sessionState = vi.hoisted(() => ({ data: { user: { id: 'u1' }, session: { id: 's1' } } as unknown }));
 vi.mock('../lib/auth-client', async (importOriginal) => {
@@ -21,6 +21,11 @@ import { EntriesPage } from '../pages/EntriesPage';
 const methods: PaymentMethodDTO[] = [
   { id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 },
   { id: 'm-card', name: 'Cartão de crédito', color: '#e255a1', sortOrder: 1 },
+];
+
+const tagList: TagDTO[] = [
+  { id: 't-sub', name: 'Assinatura', color: '#D9730D', sortOrder: 0, system: 'SUBSCRIPTION' },
+  { id: 't-casa', name: 'Casa', color: '#0B6E99', sortOrder: 1, system: null },
 ];
 
 function entry(over: Partial<EntryDTO> & Pick<EntryDTO, 'id' | 'displayName' | 'amountCents' | 'dueDate'>): EntryDTO {
@@ -95,7 +100,26 @@ function mockFetch() {
         return json(target);
       }
       if (url.pathname === '/api/entries' && method === 'POST') return json([], 201);
-      if (url.pathname.startsWith('/api/entries/') && method === 'PATCH') return json([]);
+      if (url.pathname.startsWith('/api/entries/') && method === 'PATCH') {
+        // Mesmas regras de `tagIds` da API: array de strings não vazias, únicas, até 20.
+        const patch = (body ?? {}) as { tagIds?: unknown; scope?: string };
+        if (patch.tagIds !== undefined) {
+          const ids = patch.tagIds;
+          const valid =
+            Array.isArray(ids) &&
+            ids.length <= 20 &&
+            ids.every((t) => typeof t === 'string' && t.length > 0) &&
+            new Set(ids).size === ids.length;
+          if (!valid) return json({ error: 'invalid_body' }, 400);
+          const id = decodeURIComponent(url.pathname.split('/')[3]!);
+          const current = entries.find((e) => e.id === id);
+          const changed =
+            !!current &&
+            (current.tagIds.length !== ids.length || !(ids as string[]).every((t) => current.tagIds.includes(t)));
+          if (current?.seriesId && changed && !patch.scope) return json({ error: 'scope_required' }, 400);
+        }
+        return json([]);
+      }
       if (url.pathname.startsWith('/api/entries/') && method === 'DELETE') return new Response(null, { status: 204 });
       if (url.pathname.startsWith('/api/series/')) return new Response(null, { status: 204 });
 
@@ -111,7 +135,7 @@ function mockFetch() {
         case '/api/summary':
           return json({ expenseCents: 0, expensePaidCents: 0, incomeCents: 0, incomePaidCents: 0, balanceCents: 0, realizedCents: 0 });
         case '/api/tags':
-          return json([]);
+          return json(tagList);
         case '/api/payment-methods':
           return methodList ? json(methodList) : json({ error: 'internal' }, 500);
         default:
@@ -703,6 +727,115 @@ describe('EntriesPage (escrita) — segurança dos dados', () => {
     fireEvent.change(amount, { target: { value: '42,9' } });
     fireEvent.blur(amount);
     expect((amount as HTMLInputElement).value.replace(/\u00A0/g, ' ')).toBe('R$ 42,90');
+  });
+});
+
+describe('EntriesPage (escrita) — etiquetas', () => {
+  test('desktop, avulsa: marcar "Assinatura" e aplicar envia tagIds sem scope', async () => {
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Etiquetas: Aluguel' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Assinatura' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ method: 'PATCH', path: '/api/entries/e1', body: { tagIds: ['t-sub'] } });
+    expect(screen.queryByRole('button', { name: 'Aplicar' })).not.toBeInTheDocument();
+  });
+
+  test('série: aplicar etiquetas abre "Aplicar alteração" e "Esta e as próximas" envia scope following', async () => {
+    entries = [installment()];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Etiquetas: Fone 3/7' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Casa' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Aplicar alteração' });
+    expect(calls).toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Esta e as próximas' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ method: 'PATCH', path: '/api/entries/e1', body: { scope: 'following', tagIds: ['t-casa'] } });
+  });
+
+  test('aplicar sem mudar nada não envia', async () => {
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05', tagIds: ['t-casa'] })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Etiquetas: Aluguel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(screen.queryByRole('button', { name: 'Aplicar' })).not.toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
+  test('Esc fecha e aplica; foco volta ao botão', async () => {
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+
+    const trigger = await screen.findByRole('button', { name: 'Etiquetas: Aluguel' });
+    fireEvent.click(trigger);
+    const box = screen.getByRole('checkbox', { name: 'Assinatura' });
+    await waitFor(() => expect(box).toHaveFocus());
+    fireEvent.click(box);
+    fireEvent.keyDown(box, { key: 'Escape' });
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toEqual({ tagIds: ['t-sub'] });
+    expect(trigger).toHaveFocus();
+  });
+
+  test('clique fora fecha e aplica', async () => {
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Etiquetas: Aluguel' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Casa' }));
+    fireEvent.mouseDown(document.body);
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toEqual({ tagIds: ['t-casa'] });
+  });
+
+  test('celular: marcar "Assinatura" no formulário e salvar envia tagIds', async () => {
+    setViewport(false);
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar: Aluguel' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    fireEvent.click(within(sheet).getByRole('checkbox', { name: 'Assinatura' }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ method: 'PATCH', path: '/api/entries/e1', body: { tagIds: ['t-sub'] } });
+  });
+
+  test('celular: salvar sem mexer nas etiquetas não envia tagIds', async () => {
+    setViewport(false);
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05', tagIds: ['t-casa'] })];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar: Aluguel' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    expect(within(sheet).getByRole('checkbox', { name: 'Casa' })).toBeChecked();
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Valor' }), { target: { value: '1.600,00' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toEqual({ amountCents: 160000 });
+  });
+
+  test('offline: botão de etiquetas desabilitado e painel não abre', async () => {
+    online = false;
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+
+    const trigger = await screen.findByRole('button', { name: 'Etiquetas: Aluguel' });
+    expect(trigger).toBeDisabled();
+    fireEvent.click(trigger);
+    expect(screen.queryByRole('button', { name: 'Aplicar' })).not.toBeInTheDocument();
   });
 });
 

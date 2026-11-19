@@ -17,6 +17,7 @@ export interface EntryDraft {
   methodId: string;
   pixKey: string;
   monthly: boolean;
+  tagIds: string[];
 }
 
 /** Limites da API (`nameSchema` / `pixKeySchema` em apps/api/src/routes/entries.ts). */
@@ -57,6 +58,11 @@ export function installmentHint(name: string): string | null {
   return parsed ? `Cria parcelas ${parsed.current} a ${parsed.total}, uma por mês` : null;
 }
 
+/** Mesmo conjunto de etiquetas, sem importar a ordem. */
+export function sameTagSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
+}
+
 export function sortedMethods(methods: PaymentMethodDTO[]): PaymentMethodDTO[] {
   return [...methods].sort((a, b) => a.sortOrder - b.sortOrder);
 }
@@ -86,7 +92,7 @@ export function copyablePixKey(entry: EntryDTO, methods: Map<string, PaymentMeth
 }
 
 export function emptyDraft(dueDate: IsoDate, methodId: string): EntryDraft {
-  return { name: '', amount: '', dueDate, methodId, pixKey: '', monthly: false };
+  return { name: '', amount: '', dueDate, methodId, pixKey: '', monthly: false, tagIds: [] };
 }
 
 export function draftFromEntry(entry: EntryDTO): EntryDraft {
@@ -97,6 +103,7 @@ export function draftFromEntry(entry: EntryDTO): EntryDraft {
     methodId: entry.paymentMethodId ?? '',
     pixKey: entry.pixKey ?? '',
     monthly: entry.seriesType === 'MONTHLY',
+    tagIds: entry.tagIds,
   };
 }
 
@@ -153,5 +160,6 @@ export function draftToPatch(
     // inalterado (ex.: lista de métodos ainda não carregada), a chave gravada fica como está.
     patch.pixKey = null;
   }
+  if (!sameTagSet(draft.tagIds, entry.tagIds)) patch.tagIds = draft.tagIds;
   return { ok: true, value: patch };
 }
