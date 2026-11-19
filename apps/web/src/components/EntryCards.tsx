@@ -1,14 +1,17 @@
-import { formatBRL, formatDatePtBR, type EntryDTO, type PaymentMethodDTO } from '@pluton/shared';
+import { formatBRL, formatDatePtBR, type EntryDTO } from '@pluton/shared';
+import { useEntryActions } from './EntryActions';
 import { KindIcon } from './KindIcon';
 import { MethodTag } from './MethodTag';
+import { PixCopyButton } from './PixCopyButton';
+import { PencilIcon } from './RowActions';
 
 interface Props {
   rows: EntryDTO[];
-  methods: Map<string, PaymentMethodDTO>;
   overdue?: boolean;
 }
 
-export function EntryCards({ rows, methods, overdue = false }: Props) {
+export function EntryCards({ rows, overdue = false }: Props) {
+  const { canWrite, methods, setPaid, openEditor } = useEntryActions();
   return (
     <ul className="flex flex-col gap-2">
       {rows.map((e) => (
@@ -22,16 +25,26 @@ export function EntryCards({ rows, methods, overdue = false }: Props) {
             </span>
             <span className="min-w-0 flex-1 break-words text-sm text-ink">{e.displayName}</span>
             <span className="text-sm font-medium tabular-nums text-ink">{formatBRL(e.amountCents)}</span>
+            <button
+              type="button"
+              aria-label={`Editar: ${e.displayName}`}
+              disabled={!canWrite}
+              onClick={() => openEditor(e)}
+              className="-mr-1 rounded p-1 text-muted hover:bg-hover disabled:opacity-40"
+            >
+              <PencilIcon />
+            </button>
           </div>
           <div className="mt-1.5 flex items-center gap-2 pl-6 text-xs text-muted">
             <span>{formatDatePtBR(e.dueDate)}</span>
             <MethodTag method={e.paymentMethodId ? methods.get(e.paymentMethodId) : undefined} />
-            <label className="ml-auto flex items-center gap-1.5">
+            {e.pixKey && <PixCopyButton pixKey={e.pixKey} />}
+            <label className="ml-auto flex items-center gap-1.5 py-1">
               <input
                 type="checkbox"
                 checked={e.paidOn != null}
-                disabled
-                readOnly
+                disabled={!canWrite}
+                onChange={(ev) => setPaid(e, ev.target.checked)}
                 aria-label={`Pago: ${e.displayName}`}
               />
               Pago
