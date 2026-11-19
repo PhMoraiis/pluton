@@ -115,6 +115,12 @@ describe('POST /api/import/preview', () => {
     expect((await post('preview', { csv: FIXTURE }, false)).status).toBe(401);
   });
 
+  test('import aceita body acima do limite geral de 64 KB', async () => {
+    // CSV inválido mas grande: chega à validação/planejamento (não é barrado com 413).
+    const res = await post('preview', { csv: 'x'.repeat(100 * 1024) });
+    expect(res.status).not.toBe(413);
+  });
+
   test('body acima de 2 MB → 413', async () => {
     const big = JSON.stringify({ csv: 'x'.repeat(2 * 1024 * 1024 + 10) });
     expect((await post('preview', big)).status).toBe(413);
@@ -187,8 +193,10 @@ describe('POST /api/import/commit', () => {
     expect(spotify!.entries.every((e) => e.name === 'Spotify' && e.amountCents === 2190)).toBe(true);
 
     // Mensal inativa: encerrada no fim do mês da última ocorrência; nada materializado.
+    // A materialização marca a geração como completa (generatedThrough = endedOn), então
+    // os GETs seguintes nem abrem transação para ela.
     expect(toIsoDate(claro!.endedOn!)).toBe('2025-03-31');
-    expect(toIsoDate(claro!.generatedThrough!)).toBe('2025-03-15');
+    expect(toIsoDate(claro!.generatedThrough!)).toBe('2025-03-31');
     expect(claro!.entries.map((e) => toIsoDate(e.dueDate))).toEqual(['2025-01-15', '2025-02-15', '2025-03-15']);
     expect(claro!.paymentMethodId).toBe(ids['Pix']);
 

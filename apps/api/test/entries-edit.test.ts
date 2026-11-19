@@ -1,6 +1,7 @@
 import type { EntryDTO, PaymentMethodDTO } from '@pluton/shared';
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { prisma } from '../src/db';
+import { ensureMaterialized } from '../src/services/materialize';
 import { api, json, resetDb, signUpAndGetCookie, TEST_USER } from './helpers';
 
 let cookie: string;
@@ -499,6 +500,82 @@ describe('POST /api/series/:id/end', () => {
   });
 });
 
+describe('propagação x pagamento concorrente (pagas nunca são alteradas)', () => {
+  /** Espera alguma conexão do banco ficar parada esperando trava de linha. */
+  async function waitForLockWait(): Promise<void> {
+    for (let i = 0; i < 200; i++) {
+      const [row] = await prisma.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND datname = current_database()`;
+      if (row && row.n > 0) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error('o PATCH não chegou a esperar a trava da parcela');
+  }
+
+  /**
+   * Marca `followerId` como paga numa transação que fica aberta (setPaid não pega a trava
+   * da série) enquanto `edit` roda: o PATCH lê a parcela ainda não paga e, ao gravar,
+   * espera a trava de linha; o pagamento é confirmado e só então o PATCH continua.
+   */
+  async function payDuring(followerId: string, edit: () => Promise<Response>): Promise<Response> {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let markLocked!: () => void;
+    const locked = new Promise<void>((r) => (markLocked = r));
+    const payer = prisma.$transaction(
+      async (tx) => {
+        await tx.entry.update({ where: { id: followerId }, data: { paidOn: new Date('2026-11-18T00:00:00Z') } });
+        markLocked();
+        await gate;
+      },
+      { timeout: 15_000 },
+    );
+    await locked;
+    const editing = edit();
+    await waitForLockWait();
+    release();
+    await payer;
+    return editing;
+  }
+
+  test('valor com following: parcela paga durante a propagação mantém o valor', async () => {
+    const { entries, seriesId } = await seedFone();
+    const res = await payDuring(bySeq(entries, 4).id, () =>
+      patch(bySeq(entries, 3).id, { scope: 'following', amountCents: 17000 }),
+    );
+    expect(res.status).toBe(200);
+    const rows = await seriesRows(seriesId);
+    expect(rows.map((r) => [r.sequence, r.amountCents, r.paidOn])).toEqual([
+      [1, 15990, null],
+      [2, 15990, null],
+      [3, 17000, null],
+      [4, 15990, '2026-11-18'],
+      [5, 17000, null],
+      [6, 17000, null],
+      [7, 17000, null],
+    ]);
+  });
+
+  test('nome com following: parcela paga durante a propagação mantém o nome', async () => {
+    const { entries, seriesId } = await seedFone();
+    const res = await payDuring(bySeq(entries, 4).id, () =>
+      patch(bySeq(entries, 3).id, { scope: 'following', name: 'Fone Bluetooth 3/7' }),
+    );
+    expect(res.status).toBe(200);
+    const rows = await seriesRows(seriesId);
+    expect(rows.map((r) => [r.sequence, r.name])).toEqual([
+      [1, 'Fone'],
+      [2, 'Fone'],
+      [3, 'Fone Bluetooth'],
+      [4, 'Fone'],
+      [5, 'Fone Bluetooth'],
+      [6, 'Fone Bluetooth'],
+      [7, 'Fone Bluetooth'],
+    ]);
+  });
+});
+
 describe('materialização (carregado da Task 7)', () => {
   test('série mensal ativa sem nenhuma entrada não é recriada a partir de generatedThrough', async () => {
     const created = await createOk({ name: 'Internet', dueDate: '2026-12-05', monthly: true });
@@ -507,6 +584,49 @@ describe('materialização (carregado da Task 7)', () => {
     await list('kind=EXPENSE&from=2026-11&to=2027-12');
     await list('kind=EXPENSE&status=pending');
     expect(await prisma.entry.count({ where: { seriesId } })).toBe(0);
+  });
+
+  test('série encerrada que já gerou até o fim não reabre transação nem trava a série', async () => {
+    const created = await createOk({ name: 'Internet', dueDate: '2026-12-05', monthly: true });
+    const seriesId = created[0]!.seriesId!;
+    // Gerado até dez/2027; encerrar em mar/2028 (depois do gerado) ainda deixa meses a gerar.
+    expect((await endSeries(seriesId, { lastMonth: '2028-03' })).status).toBe(204);
+    await jumpTo(new Date('2027-06-18T15:00:00Z'));
+    expect((await list('kind=EXPENSE&from=2027-06&to=2027-06')).status).toBe(200);
+
+    const rows = await seriesRows(seriesId);
+    expect(rows.at(-1)!.dueDate).toBe('2028-03-05');
+    expect(rows).toHaveLength(16);
+    const series = await prisma.series.findUniqueOrThrow({ where: { id: seriesId } });
+    // Geração completa: generatedThrough marca o fim, e o atalho a pula daqui em diante.
+    expect(series.generatedThrough!.toISOString().slice(0, 10)).toBe('2028-03-31');
+
+    // Outra transação segura a trava da série: se a materialização tentasse travá-la de
+    // novo, ficaria esperando.
+    const user = await prisma.user.findFirstOrThrow();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let markLocked!: () => void;
+    const locked = new Promise<void>((r) => (markLocked = r));
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Series" WHERE id = ${seriesId} FOR UPDATE`;
+        markLocked();
+        await gate;
+      },
+      { timeout: 15_000 },
+    );
+    await locked;
+    const materializing = ensureMaterialized(user.id, '2029-12').then(() => 'done' as const);
+    const outcome = await Promise.race([
+      materializing,
+      new Promise<'blocked'>((r) => setTimeout(() => r('blocked'), 750)),
+    ]);
+    release();
+    await holder;
+    await materializing;
+    expect(outcome).toBe('done');
+    expect(await prisma.entry.count({ where: { seriesId } })).toBe(16);
   });
 
   test('overdue materializa até o mês atual antes de listar', async () => {

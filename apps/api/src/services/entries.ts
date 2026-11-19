@@ -352,14 +352,17 @@ export async function updateEntry(
         { dueDate: change.dueDate, amountCents: change.amountCents },
       );
       for (const u of updates) {
-        await tx.entry.update({
-          where: { id: u.id },
+        // `setPaid` não pega a trava da série: uma seguinte pode ter sido paga depois da
+        // leitura acima. O filtro `paidOn: null` é reavaliado na gravação (após a trava de
+        // linha), então uma parcela paga no meio do caminho fica intocada.
+        const { count } = await tx.entry.updateMany({
+          where: u.id === id ? { id } : { id: u.id, paidOn: null },
           data: {
             dueDate: u.dueDate !== undefined ? fromIsoDate(u.dueDate) : undefined,
             amountCents: u.amountCents,
           },
         });
-        changedIds.add(u.id);
+        if (count > 0) changedIds.add(u.id);
       }
     }
 
@@ -389,7 +392,12 @@ export async function updateEntry(
         },
         select: { id: true },
       });
-      await tx.entry.updateMany({ where: { id: { in: targets.map((t) => t.id) } }, data: attrs });
+      const followers = targets.map((t) => t.id).filter((t) => t !== id);
+      // Mesmo cuidado da propagação acima: `paidOn: null` reavaliado na gravação.
+      await tx.entry.updateMany({
+        where: { OR: [{ id }, { id: { in: followers }, paidOn: null }] },
+        data: attrs,
+      });
       for (const t of targets) changedIds.add(t.id);
     }
 

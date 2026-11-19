@@ -35,7 +35,8 @@ export function horizonMonth(throughMonth: MonthKey, startMonth: MonthKey, today
  * - Trava a linha da série (`FOR UPDATE`) para que requisições concorrentes não gerem o
  *   mesmo mês duas vezes; `skipDuplicates` sobre `@@unique([seriesId, sequence])` é a
  *   segunda barreira.
- * - Respeita `endedOn`: nenhum vencimento depois dele.
+ * - Respeita `endedOn`: nenhum vencimento depois dele; ao alcançá-lo, `generatedThrough`
+ *   vira `endedOn` (geração completa).
  */
 export async function materializeSeries(
   tx: Prisma.TransactionClient,
@@ -55,10 +56,14 @@ export async function materializeSeries(
   const lastSequence = _max.sequence ?? 0;
 
   const rows: Prisma.EntryCreateManyInput[] = [];
+  let reachedEnd = false;
   for (let i = 1; ; i++) {
     const dueDate = addMonthsClamped(generatedThrough, i, series.dayOfMonth);
     if (monthKeyOf(dueDate) > horizon) break;
-    if (endedOn !== null && dueDate > endedOn) break;
+    if (endedOn !== null && dueDate > endedOn) {
+      reachedEnd = true;
+      break;
+    }
     rows.push({
       userId: series.userId,
       kind: series.kind,
@@ -71,11 +76,13 @@ export async function materializeSeries(
       sequence: lastSequence + i,
     });
   }
+  // Série encerrada que já gerou tudo até `endedOn`: `generatedThrough = endedOn` marca a
+  // geração como completa, e o atalho (`generatedThrough >= endedOn`) passa a pulá-la sem
+  // abrir transação nem travar a linha. Só avança: nada apagado volta a ser gerado.
   const last = rows.at(-1);
-  if (!last) return;
-
-  await tx.entry.createMany({ data: rows, skipDuplicates: true });
-  await tx.series.update({ where: { id: seriesId }, data: { generatedThrough: last.dueDate } });
+  const through = reachedEnd ? fromIsoDate(endedOn!) : last?.dueDate;
+  if (rows.length > 0) await tx.entry.createMany({ data: rows, skipDuplicates: true });
+  if (through) await tx.series.update({ where: { id: seriesId }, data: { generatedThrough: through } });
 }
 
 /**
