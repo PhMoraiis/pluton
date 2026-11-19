@@ -7,6 +7,7 @@ import { paymentMethodRoutes } from './routes/payment-methods';
 import { seriesRoutes } from './routes/series';
 import { setupRoutes } from './routes/setup';
 import { summaryRoutes } from './routes/summary';
+import { tagRoutes } from './routes/tags';
 import { securityHeaders, serveWeb } from './web';
 
 /** Limite de body da API (auth incluída); só `/api/import/*` tem o seu, maior (2 MB). */
@@ -36,6 +37,7 @@ export function createApp(options: AppOptions = {}): Hono {
   api.on(['GET', 'POST'], '/auth/*', (c) => auth.handler(c.req.raw));
   api.route('/', setupRoutes);
   api.route('/payment-methods', paymentMethodRoutes);
+  api.route('/tags', tagRoutes);
   api.route('/entries', entryRoutes);
   api.route('/series', seriesRoutes);
   api.route('/default-month', defaultMonthRoutes);
