@@ -125,6 +125,21 @@ describe('buildImportPlan', () => {
     expect(s.entries.filter((e) => !e.generated)).toHaveLength(2);
   });
 
+  it('does not regenerate parcels that already exist', () => {
+    const keys = new Set([
+      entryDedupeKey('EXPENSE', 'Fone 3/7', '2026-11-05', 99999),
+      entryDedupeKey('EXPENSE', 'Fone 4/7', '2026-12-05', 25470),
+      entryDedupeKey('EXPENSE', 'Fone 5/7', '2027-01-06', 11111),
+      entryDedupeKey('EXPENSE', 'Fone 6/7', '2027-02-05', 25470),
+      entryDedupeKey('EXPENSE', 'Fone 7/7', '2027-03-05', 25470),
+    ]);
+    const p = buildImportPlan(rows, { today: TODAY, existingKeys: keys });
+    const s = p.installmentSeries.find((x) => x.total === 7)!;
+    expect(s.entries.filter((e) => e.generated)).toHaveLength(0);
+    expect(s.entries).toHaveLength(3);
+    expect(p.duplicates).toBe(4);
+  });
+
   it('is deterministic', () => {
     expect(plan()).toEqual(plan());
   });

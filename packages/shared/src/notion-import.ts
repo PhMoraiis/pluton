@@ -187,6 +187,14 @@ export function buildImportPlan(rows: NotionRow[], opts: BuildImportPlanOptions)
   }
 
   let duplicates = 0;
+  // Display names (any date/amount) already stored as EXPENSE, to avoid regenerating parcels.
+  const existingNames = new Set<string>();
+  for (const key of opts.existingKeys) {
+    const parts = key.split('|');
+    if (parts[0] === 'EXPENSE' && parts.length >= 4) {
+      existingNames.add(parts.slice(1, -2).join('|'));
+    }
+  }
   const installmentRows: InstallmentRow[] = [];
   const plainRows: ValidRow[] = [];
 
@@ -248,6 +256,14 @@ export function buildImportPlan(rows: NotionRow[], opts: BuildImportPlanOptions)
         .sort((a, b) => a.sequence - b.sequence)
         .map((ir) => toEntry(ir.row, baseName, ir.sequence));
       for (const p of planSequence(last.row.dueDate, last.sequence, total, dayOfMonth).slice(1)) {
+        const display = formatEntryName(baseName, p.sequence, total);
+        if (
+          existingNames.has(normalizeName(display)) ||
+          opts.existingKeys.has(entryDedupeKey('EXPENSE', display, p.dueDate, last.row.amountCents))
+        ) {
+          duplicates++;
+          continue;
+        }
         entries.push({
           rowId: null,
           name: baseName,
