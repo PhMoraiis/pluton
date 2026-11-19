@@ -15,11 +15,13 @@ const DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
 function SalaryForm({
   salary,
   currentMonth,
-  onDeactivated,
+  saved,
+  onSavedChange,
 }: {
   salary: SalaryDTO | null;
   currentMonth: string;
-  onDeactivated: () => void;
+  saved: boolean;
+  onSavedChange: (saved: boolean) => void;
 }) {
   const canWrite = useCanWrite();
   const client = useQueryClient();
@@ -38,19 +40,27 @@ function SalaryForm({
   const save = useMutation({
     mutationFn: (body: { amountCents: number; dayOfMonth: number; startMonth: string; paymentMethodId: string | null }) =>
       apiFetch<SalaryDTO>('/api/salary', { method: 'PUT', body: JSON.stringify(body) }),
-    onSuccess: () => invalidateEntryQueries(client),
+    onSuccess: () => {
+      onSavedChange(true);
+      return invalidateEntryQueries(client);
+    },
   });
   const deactivate = useMutation({
     mutationFn: (month: string) => apiFetch<void>(`/api/salary?${new URLSearchParams({ lastMonth: month })}`, { method: 'DELETE' }),
     onSuccess: async () => {
       setDeactivating(false);
-      onDeactivated();
+      onSavedChange(false);
       await invalidateEntryQueries(client);
     },
   });
 
   const cents = parseAmount(amount);
   const valid = cents !== null && startMonth !== '';
+
+  function edit(set: (v: string) => void, value: string) {
+    set(value);
+    onSavedChange(false);
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -67,14 +77,14 @@ function SalaryForm({
             inputMode="decimal"
             value={amount}
             disabled={!canWrite}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => edit(setAmount, e.target.value)}
             onBlur={() => setAmount(maskAmount(amount))}
             className={input}
           />
         </label>
         <label className="flex flex-col gap-1 text-sm text-muted">
           Dia do pagamento
-          <select value={day} disabled={!canWrite} onChange={(e) => setDay(e.target.value)} className={input}>
+          <select value={day} disabled={!canWrite} onChange={(e) => edit(setDay, e.target.value)} className={input}>
             {DAYS.map((d) => (
               <option key={d} value={d}>
                 {d}
@@ -90,13 +100,13 @@ function SalaryForm({
             value={startMonth}
             min={currentMonth}
             disabled={!canWrite || salary !== null}
-            onChange={(e) => setStartMonth(e.target.value)}
+            onChange={(e) => edit(setStartMonth, e.target.value)}
             className={input}
           />
         </label>
         <label className="flex flex-col gap-1 text-sm text-muted">
           Método de recebimento
-          <select value={methodId} disabled={!canWrite} onChange={(e) => setMethodId(e.target.value)} className={input}>
+          <select value={methodId} disabled={!canWrite} onChange={(e) => edit(setMethodId, e.target.value)} className={input}>
             <option value="">Sem método</option>
             {sortedMethods(methods.data ?? []).map((m) => (
               <option key={m.id} value={m.id}>
@@ -110,7 +120,7 @@ function SalaryForm({
             {friendlyError(save.error)}
           </p>
         )}
-        {save.isSuccess && (
+        {saved && (
           <p role="status" className="text-sm text-muted">
             Salário salvo.
           </p>
@@ -179,8 +189,7 @@ export function SalarySection() {
     queryFn: () => apiFetch<SalaryDTO | null>('/api/salary'),
   });
   const currentMonth = monthKeyOf(todayInSaoPaulo());
-  // Só remonta ao desativar (volta aos padrões); criar não remonta, para o status "Salário salvo." sobreviver ao refetch.
-  const [formKey, setFormKey] = useState(0);
+  const [saved, setSaved] = useState(false);
 
   return (
     <section aria-label="Salário" className="flex flex-col gap-3">
@@ -192,10 +201,12 @@ export function SalarySection() {
       )}
       {salary.data !== undefined && (
         <SalaryForm
-          key={formKey}
+          // Remonta quando a identidade do salário persistido muda (criar/desativar), semeado com os dados novos.
+          key={salary.data?.seriesId ?? 'none'}
           salary={salary.data}
           currentMonth={currentMonth}
-          onDeactivated={() => setFormKey((k) => k + 1)}
+          saved={saved}
+          onSavedChange={setSaved}
         />
       )}
     </section>

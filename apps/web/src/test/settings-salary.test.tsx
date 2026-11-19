@@ -251,4 +251,30 @@ describe('SettingsPage – Salário', () => {
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Confirmar' })).toBeDisabled());
     expect(within(dialog).getByLabelText('Último mês com salário')).toBeDisabled();
   });
+
+  test('depois de desativar o formulário volta aos padrões e recriar envia o mês atual', async () => {
+    salary = { seriesId: 's1', amountCents: 450000, dayOfMonth: 5, paymentMethodId: 'm-pix', startMonth: '2026-08' };
+    renderSettings();
+    await waitFor(() => expect(screen.getByLabelText('Valor estimado')).toHaveValue('4.500,00'));
+    fireEvent.click(screen.getByRole('button', { name: 'Desativar salário' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Desativar salário' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Mês de início')).toBeEnabled());
+
+    expect(screen.getByLabelText('Valor estimado')).toHaveValue('');
+    const day = screen.getByLabelText('Dia do pagamento') as HTMLSelectElement;
+    expect(day.selectedOptions[0]).toHaveTextContent('Último dia do mês');
+    expect(screen.getByLabelText('Mês de início')).toHaveValue(CURRENT);
+    expect(screen.getByLabelText('Método de recebimento')).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('Valor estimado'), { target: { value: '100,00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar salário' }));
+    await within(section()).findByRole('status');
+    expect(calls.filter((c) => c.method === 'PUT').at(-1)!.body).toEqual({
+      amountCents: 10000,
+      dayOfMonth: 31,
+      startMonth: CURRENT,
+      paymentMethodId: null,
+    });
+  });
 });
