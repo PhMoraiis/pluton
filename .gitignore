@@ -1,0 +1,6 @@
+# Export pessoal do Notion — dados financeiros pessoais, nunca versionar
+dados_notion_pluton/
+node_modules/
+dist/
+.env
+apps/api/src/generated/

@@ -1,120 +1,69 @@
 # Pluton
 
-Aplicativo iOS de finanças pessoais construído com SwiftUI e SwiftData. Permite controlar transações, planejar o orçamento, acompanhar metas e gerenciar investimentos — tudo armazenado localmente no dispositivo, sem servidores externos.
+PWA de finanças pessoais (conta única): despesas, ganhos, parcelas e séries mensais, em BRL, interface em pt-BR. Reescrita do app iOS original em SwiftUI, que está preservado na branch `swift-legacy`.
 
----
+Especificação: [docs/superpowers/specs/2026-11-18-pluton-pwa-design.md](docs/superpowers/specs/2026-11-18-pluton-pwa-design.md)
+Deploy: [docs/deploy.md](docs/deploy.md)
 
-## Funcionalidades
+## Stack
 
-### Insights
-Dashboard principal com visão consolidada das finanças:
-- Saldo atual em destaque
-- Cards de ganhos e gastos totais
-- Gráfico de evolução financeira com filtros de período: 7 dias, 1 mês, 3 meses e 1 ano
-- Histórico das transações recentes
+- Monorepo pnpm (`apps/*`, `packages/*`), Node 24 LTS, TypeScript estrito
+- `packages/shared` (`@pluton/shared`): tipos e utilitários de dinheiro, consumido como fonte TS
+- `apps/api` (`@pluton/api`): API Hono com Postgres, Prisma Migrate e Better Auth (rotas em `/api`)
+- `apps/web` (`@pluton/web`): PWA React + Vite + TanStack Query + Tailwind, offline somente leitura
+- Testes com Vitest
 
-### Transações
-Registro completo de entradas e saídas:
-- Categorias para gastos: Alimentação, Transporte, Moradia, Saúde, Lazer, Educação, Compras, Assinaturas e Outros
-- Categorias para ganhos: Salário, Freelance, Investimentos, Bônus, Presente e Outros
-- Suporte a **transações fixas** — ao cadastrar uma transação como fixa, ela é propagada automaticamente para os próximos 12 meses
-- Edição e exclusão de transações individuais ou de toda a série recorrente
+## Desenvolvimento
 
-### Previsão
-Planejamento orçamentário mensal:
-- Crie previsões de receitas e despesas futuras
-- Suporte a **previsões recorrentes** configuradas por número de meses
-- Marque previsões como concluídas mês a mês, de forma independente
-- Navegação por mês para visualizar o calendário financeiro
-
-### Metas
-Acompanhamento de objetivos financeiros:
-- Presets rápidos: Viagem, Carro, Casa, Educação, Reserva de Emergência, Casamento, Eletrônicos e Personalizado
-- Definição de valor-alvo, valor atual e prazo opcional
-- Barra de progresso visual e cálculo automático do valor restante
-- Marque metas como concluídas
-
-### Investimentos
-Controle do patrimônio investido:
-- Tipos suportados: Poupança, Cofrinho, CDB, CDI, Ações, Cripto, Fundos Imobiliários, Tesouro Direto e Personalizado
-- Registro de aportes com data e anotação
-- Gráfico de pizza com distribuição do portfólio
-- Histórico de aportes por investimento
-- Patrimônio total consolidado em destaque
-
----
-
-## Tecnologias
-
-| Tecnologia | Uso |
-|---|---|
-| **SwiftUI** | Interface declarativa |
-| **SwiftData** | Persistência local de dados |
-| **Swift Charts** | Gráficos de evolução e distribuição |
-| **UIKit (Haptics)** | Feedback tátil na navegação |
-
-**Requisitos mínimos:** iOS 17+ / Xcode 15+
-
----
-
-## Arquitetura
-
-```
-pluton/
-├── Models/
-│   ├── Transaction.swift      # Transações (entrada/saída, fixas, categorias)
-│   ├── ForecastEntry.swift    # Previsões orçamentárias com recorrência
-│   ├── Goal.swift             # Metas financeiras
-│   └── Investment.swift       # Investimentos e aportes
-├── Views/
-│   ├── HomeView.swift         # Dashboard de insights
-│   ├── TransactionsView.swift # Lista e gestão de transações
-│   ├── ForecastView.swift     # Planejamento mensal
-│   ├── GoalsView.swift        # Acompanhamento de metas
-│   ├── InvestmentsView.swift  # Portfólio de investimentos
-│   ├── Add*View.swift         # Formulários de criação
-│   ├── Edit*View.swift        # Formulários de edição
-│   ├── SharedComponents.swift # Componentes reutilizáveis (FAB, etc.)
-│   └── SplashView.swift       # Tela de abertura
-├── DesignSystem.swift         # Tokens de design (cores, espaçamentos, raios, sombras)
-├── ContentView.swift          # Navegação principal com header e FAB
-└── plutonApp.swift            # Entry point e configuração do ModelContainer
+```bash
+nvm use            # Node 24
+pnpm install
+cp .env.example .env   # preencha os valores localmente; nunca versione o .env
 ```
 
-A navegação entre as 5 abas funciona tanto pelos ícones do header quanto por **gestos de swipe horizontal**, com animação de transição e feedback tátil.
+```bash
+docker compose -f docker-compose.dev.yml up -d --wait   # Postgres local (porta 5433, cria também o banco pluton_test)
+pnpm --filter @pluton/api migrate:deploy                # aplica as migrações
+pnpm dev                                                # api (:3000) + web (:5173) juntos
+```
 
----
+Abra `http://localhost:5173`. O Vite faz proxy de `/api` para a API, então o app roda na mesma origem; em dev, `BETTER_AUTH_URL` precisa ser `http://localhost:5173` (a origem do navegador), senão o Better Auth recusa o login com `INVALID_ORIGIN`. Em produção é a URL pública do app.
 
-## Design System
+Build do PWA: `pnpm --filter @pluton/web build` (saída em `apps/web/dist`). Ícones: `pnpm --filter @pluton/web icons` regera os PNGs de `apps/web/public`.
+Build da API: `pnpm --filter @pluton/api build` (bundle `tsup` em `apps/api/dist/server.js`).
 
-O `DesignSystem.swift` centraliza todos os tokens visuais do app:
+### Variáveis de ambiente
 
-- **Colors** — primária, sucesso (`#4CAF50`), perigo (`#FF5252`), fundos e bordas adaptados ao modo claro/escuro
-- **Spacing** — escala de 6 níveis: `xs (4)` → `xxxl (40)`
-- **Radius** — escala de 6 níveis: `sm (10)` → `full (9999)`
-- **Shadows** — 3 níveis de elevação: `sm`, `md`, `lg`
+O `.env` da raiz é lido pela API (`tsx --env-file-if-exists`) e pelo `prisma.config.ts`. O `.env.example` lista só os nomes:
 
-Componentes reutilizáveis incluídos: `Card`, `StatCard`, `Badge`, `EmptyStateView`, `FieldRow`, `IconColorPicker`, `PrimaryButtonStyle` e `SecondaryButtonStyle`.
+| Variável | Dev local | Produção |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5433/pluton` (Postgres do compose; credenciais só locais) | URL interna do Postgres do Dokploy |
+| `BETTER_AUTH_SECRET` | gere com `openssl rand -base64 32` | gere com `openssl rand -base64 32` (só no Dokploy) |
+| `BETTER_AUTH_URL` | `http://localhost:5173` | `https://finances.philipemorais.com` |
+| `PORT` | `3000` | `3000` (padrão da imagem) |
+| `NODE_ENV` | `development` | `production` (padrão da imagem) |
+| `BETTER_AUTH_TRUSTED_PROXIES` | — | opcional; veja [docs/deploy.md](docs/deploy.md#proxy-e-ip-do-cliente) |
+| `DATABASE_URL_TEST` | opcional; padrão `postgresql://postgres:postgres@localhost:5433/pluton_test` | — |
 
----
+## Testes
 
-## Como rodar
+```bash
+docker compose -f docker-compose.dev.yml up -d --wait   # a suíte da API precisa do Postgres
+pnpm test        # todos os pacotes (a API aplica as migrações no banco de testes antes)
+pnpm typecheck   # checagem de tipos em todos os pacotes
+```
 
-1. Clone o repositório
-2. Abra `Pluton.xcodeproj` no Xcode 15 ou superior
-3. Selecione um simulador ou dispositivo com iOS 17+
-4. Pressione `⌘R` para compilar e executar
+Os testes da API usam `DATABASE_URL_TEST` (padrão: banco `pluton_test` do compose) e truncam as tabelas a cada teste — nunca aponte para um banco com dados reais.
 
-Não há dependências externas — o projeto utiliza exclusivamente frameworks nativos da Apple.
+## Produção
 
----
+Imagem única (API + PWA na mesma origem, porta 3000): `docker build -t pluton .`. No start, o container roda `prisma migrate deploy` e serve o PWA com CSP estrita. Passo a passo do Dokploy, backups no Cloudflare R2 e teste de restauração: [docs/deploy.md](docs/deploy.md).
 
-## Tema
+Antes de cada deploy: `pnpm audit --prod` e `pnpm licenses list --prod`.
 
-O app suporta três modos de tema, configuráveis pelo menu do logo "Pluton" no header:
+## Convenções
 
-- **Sistema** — segue a preferência do iOS
-- **Claro** — força o modo claro
-- **Escuro** — força o modo escuro
-
-A preferência é salva com `@AppStorage` e persiste entre sessões.
+- Dinheiro sempre em centavos inteiros.
+- Datas de vencimento/pagamento são data pura `YYYY-MM-DD`; "hoje" usa `America/Sao_Paulo`.
+- Segredos nunca entram no git.

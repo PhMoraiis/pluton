@@ -1,0 +1,149 @@
+// Modelos User/Session/Account/Verification gerados por `auth generate`
+// (Better Auth CLI 1.7.26, adapter prisma/postgresql); back-relations do app
+// adicionadas manualmente em User.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  paymentMethods PaymentMethod[]
+  series         Series[]
+  entries        Entry[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Modelos do app
+// ---------------------------------------------------------------------------
+
+enum EntryKind {
+  EXPENSE
+  INCOME
+}
+
+enum SeriesType {
+  INSTALLMENT
+  MONTHLY
+}
+
+model PaymentMethod {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String
+  sortOrder Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries   Entry[]
+  series    Series[]
+
+  @@unique([userId, name])
+}
+
+model Series {
+  id                String         @id @default(cuid())
+  userId            String
+  kind              EntryKind
+  type              SeriesType
+  baseName          String
+  totalInstallments Int?
+  dayOfMonth        Int
+  amountCents       Int
+  paymentMethodId   String?
+  pixKey            String?
+  endedOn           DateTime?      @db.Date
+  generatedThrough  DateTime?      @db.Date
+  createdAt         DateTime       @default(now())
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentMethod     PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  entries           Entry[]
+}
+
+model Entry {
+  id              String         @id @default(cuid())
+  userId          String
+  kind            EntryKind
+  // Nome-base; o nome exibido vem de formatEntryName (@pluton/shared).
+  name            String
+  amountCents     Int
+  dueDate         DateTime       @db.Date
+  paymentMethodId String?
+  pixKey          String?
+  note            String         @default("")
+  paidOn          DateTime?      @db.Date
+  seriesId        String?
+  sequence        Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  series          Series?        @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@unique([seriesId, sequence])
+  @@index([userId, kind, dueDate])
+}
