@@ -10,8 +10,14 @@ test.each([
 test.each(['', 'abc', 'R$', '12,345', '1,2,3', '-'])('parseBRL(%j) === null', (input) =>
   expect(parseBRL(input)).toBeNull());
 
+test('parseBRL accepts NBSP after R$ and pins edge cases', () => {
+  expect(parseBRL('R$\u00A0630,00')).toBe(63000);
+  expect(parseBRL('1.234')).toBe(123400);
+  expect(parseBRL('1234.5')).toBeNull();
+});
+
 test('formatBRL', () => {
-  expect(formatBRL(171796)).toBe('R$ 1.717,96');
-  expect(formatBRL(700)).toBe('R$ 7,00');
-  expect(formatBRL(-2500)).toBe('-R$ 25,00');
+  expect(formatBRL(171796)).toBe('R$\u00A01.717,96');
+  expect(formatBRL(700)).toBe('R$\u00A07,00');
+  expect(formatBRL(-2500)).toBe('-R$\u00A025,00');
 });

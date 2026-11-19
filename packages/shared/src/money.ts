@@ -6,7 +6,7 @@ const INTEGER = /^(\d+|\d{1,3}(?:\.\d{3})+)$/;
 
 /** Converte texto digitado em centavos inteiros; retorna null se inválido. */
 export function parseBRL(input: string): number | null {
-  const s = input.replace(/R\$/g, '').replace(/[\s ]/g, '');
+  const s = input.replace(/R\$/g, '').replace(/[\s\u00A0]/g, '');
   let whole: string;
   let frac = '';
 
@@ -29,5 +29,5 @@ export function parseBRL(input: string): number | null {
 
 /** Formata centavos como "R$ 1.717,96" (negativo: "-R$ 25,00"). */
 export function formatBRL(cents: number): string {
-  return BRL.format(cents / 100).replace(/ /g, ' ');
+  return BRL.format(cents / 100);
 }
