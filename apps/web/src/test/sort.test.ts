@@ -7,8 +7,8 @@ function e(id: string, displayName: string, amountCents = 100, dueDate = '2026-1
 }
 
 const methods = new Map<string, PaymentMethodDTO>([
-  ['m-a', { id: 'm-a', name: 'Boleto', color: '#000000', sortOrder: 0 }],
-  ['m-b', { id: 'm-b', name: 'Pix', color: '#000000', sortOrder: 1 }],
+  ['m-a', { id: 'm-a', name: 'Boleto', color: '#000000', sortOrder: 0, chargeNextMonth: false }],
+  ['m-b', { id: 'm-b', name: 'Pix', color: '#000000', sortOrder: 1, chargeNextMonth: false }],
 ]);
 
 const names = (rows: EntryDTO[]) => rows.map((r) => r.displayName);

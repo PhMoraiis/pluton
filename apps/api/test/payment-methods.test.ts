@@ -24,6 +24,7 @@ test('cria, renomeia e lista ordenado por sortOrder', async () => {
     name: 'Vale-refeição',
     color: '#2B593F',
     sortOrder: 5,
+    chargeNextMonth: false,
   });
 
   const patchRes = await api(
@@ -89,4 +90,42 @@ test('excluir método em uso deixa a entry com paymentMethodId null', async () =
   const after = await prisma.entry.findUniqueOrThrow({ where: { id: entry.id } });
   expect(after.paymentMethodId).toBeNull();
   expect(await prisma.paymentMethod.count({ where: { id: pix.id } })).toBe(0);
+});
+
+function patch(id: string, body: unknown) {
+  return api(`/api/payment-methods/${id}`, { method: 'PATCH', body: JSON.stringify(body) }, cookie);
+}
+
+test('POST com chargeNextMonth true grava e devolve true', async () => {
+  const res = await post({ name: 'Vale', color: '#2B593F', chargeNextMonth: true });
+  expect(res.status).toBe(201);
+  expect((await json<PaymentMethodDTO>(res)).chargeNextMonth).toBe(true);
+});
+
+test('PATCH { chargeNextMonth: true } liga e um PATCH seguinte só com { name, color } mantém true', async () => {
+  const created = await json<PaymentMethodDTO>(post({ name: 'Vale', color: '#2B593F' }));
+  expect(created.chargeNextMonth).toBe(false);
+
+  const on = await json<PaymentMethodDTO>(patch(created.id, { name: 'Vale', color: '#2B593F', chargeNextMonth: true }));
+  expect(on.chargeNextMonth).toBe(true);
+
+  const renamed = await json<PaymentMethodDTO>(patch(created.id, { name: 'Vale 2', color: '#28456C' }));
+  expect(renamed).toMatchObject({ name: 'Vale 2', color: '#28456C', chargeNextMonth: true });
+});
+
+test('chargeNextMonth não booleano ("sim") → 400 invalid_body', async () => {
+  const res = await post({ name: 'Vale', color: '#2B593F', chargeNextMonth: 'sim' });
+  expect(res.status).toBe(400);
+  expect(await json(res)).toEqual({ error: 'invalid_body' });
+});
+
+test('conta nova: só "Cartão de crédito" vem com chargeNextMonth true', async () => {
+  const list = await json<PaymentMethodDTO[]>(api('/api/payment-methods', undefined, cookie));
+  expect(list.map((m) => [m.name, m.chargeNextMonth])).toEqual([
+    ['Pix', false],
+    ['Cartão de crédito', true],
+    ['Débito', false],
+    ['Boleto', false],
+    ['Dinheiro', false],
+  ]);
 });

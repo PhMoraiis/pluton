@@ -9,9 +9,10 @@ import { requireUser, type AppEnv } from '../middleware/require-user';
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(60),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  chargeNextMonth: z.boolean().optional(),
 });
 
-const select = { id: true, name: true, color: true, sortOrder: true } as const;
+const select = { id: true, name: true, color: true, sortOrder: true, chargeNextMonth: true } as const;
 
 const validateBody = zValidator('json', bodySchema, (result, c) => {
   if (!result.success) return c.json({ error: 'invalid_body' }, 400);
@@ -36,11 +37,11 @@ export const paymentMethodRoutes = new Hono<AppEnv>()
   })
   .post('/', validateBody, async (c) => {
     const userId = c.get('userId');
-    const { name, color } = c.req.valid('json');
+    const { name, color, chargeNextMonth } = c.req.valid('json');
     const last = await prisma.paymentMethod.aggregate({ where: { userId }, _max: { sortOrder: true } });
     try {
       const created: PaymentMethodDTO = await prisma.paymentMethod.create({
-        data: { userId, name, color, sortOrder: (last._max.sortOrder ?? -1) + 1 },
+        data: { userId, name, color, chargeNextMonth: chargeNextMonth ?? false, sortOrder: (last._max.sortOrder ?? -1) + 1 },
         select,
       });
       return c.json(created, 201);
@@ -50,11 +51,12 @@ export const paymentMethodRoutes = new Hono<AppEnv>()
     }
   })
   .patch('/:id', validateBody, async (c) => {
-    const { name, color } = c.req.valid('json');
+    const { name, color, chargeNextMonth } = c.req.valid('json');
     try {
       const { count } = await prisma.paymentMethod.updateMany({
         where: { id: c.req.param('id'), userId: c.get('userId') },
-        data: { name, color },
+        // Clientes antigos (PWA em cache) não enviam o campo: só altera quando vier no body.
+        data: { name, color, ...(chargeNextMonth !== undefined && { chargeNextMonth }) },
       });
       if (count === 0) return c.json(notFound, 404);
     } catch (err) {

@@ -13,11 +13,11 @@ export const NOTION_COLORS = {
 
 /** Métodos criados junto com o usuário (nomes fixos pela especificação). */
 export const INITIAL_PAYMENT_METHODS = [
-  { name: 'Pix', color: NOTION_COLORS.green },
-  { name: 'Cartão de crédito', color: NOTION_COLORS.purple },
-  { name: 'Débito', color: NOTION_COLORS.blue },
-  { name: 'Boleto', color: NOTION_COLORS.orange },
-  { name: 'Dinheiro', color: NOTION_COLORS.yellow },
+  { name: 'Pix', color: NOTION_COLORS.green, chargeNextMonth: false },
+  { name: 'Cartão de crédito', color: NOTION_COLORS.purple, chargeNextMonth: true },
+  { name: 'Débito', color: NOTION_COLORS.blue, chargeNextMonth: false },
+  { name: 'Boleto', color: NOTION_COLORS.orange, chargeNextMonth: false },
+  { name: 'Dinheiro', color: NOTION_COLORS.yellow, chargeNextMonth: false },
 ] as const;
 
 /** Etiqueta de sistema criada junto com o usuário (pode ser renomeada e recolorida, mas não excluída). */

@@ -10,8 +10,8 @@ import { EntriesPage } from '../pages/EntriesPage';
 const SP = ' ';
 
 const methods: PaymentMethodDTO[] = [
-  { id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 },
-  { id: 'm-card', name: 'Cartão de crédito', color: '#e255a1', sortOrder: 1 },
+  { id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0, chargeNextMonth: false },
+  { id: 'm-card', name: 'Cartão de crédito', color: '#e255a1', sortOrder: 1, chargeNextMonth: true },
 ];
 
 const tagList: TagDTO[] = [
