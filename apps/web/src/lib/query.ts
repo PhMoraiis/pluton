@@ -57,7 +57,8 @@ export const persistOptions: PersistQueryClientProviderProps['persistOptions'] =
   maxAge: THIRTY_DAYS_MS,
   // Trocar sempre que um DTO persistido ganhar campo obrigatório: o cache da versão
   // anterior é descartado em vez de restaurado com o formato velho. v2: `tagIds`,
-  // `seriesRole` e `amountAdjusted` nos lançamentos (sem isso o Histórico quebrava).
+  // `seriesRole` e `amountAdjusted` nos lançamentos (sem isso o Histórico quebrava)
+  // e `chargeNextMonth` nos métodos de pagamento.
   buster: 'v2',
   // Só queries vão para o armazenamento; mutações (mesmo pausadas) nunca são persistidas.
   dehydrateOptions: { shouldDehydrateMutation: () => false },
