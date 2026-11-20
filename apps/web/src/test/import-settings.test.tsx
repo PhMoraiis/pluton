@@ -153,7 +153,8 @@ const methodBody = (b: Record<string, unknown> | null) =>
   b['name'].trim().length >= 1 &&
   b['name'].trim().length <= 60 &&
   typeof b['color'] === 'string' &&
-  /^#[0-9A-Fa-f]{6}$/.test(b['color']);
+  /^#[0-9A-Fa-f]{6}$/.test(b['color']) &&
+  (b['chargeNextMonth'] === undefined || typeof b['chargeNextMonth'] === 'boolean');
 
 function tagBody(b: Record<string, unknown> | null): boolean {
   return (
@@ -192,7 +193,13 @@ function mockFetch() {
           if (!methodBody(body)) return bad();
           const name = (body!['name'] as string).trim();
           if (methods.some((m) => m.name === name)) return json({ error: 'duplicate_name' }, 409);
-          const created = { id: `m-${name}`, name, color: body!['color'] as string, sortOrder: methods.length };
+          const created: PaymentMethodDTO = {
+            id: `m-${name}`,
+            name,
+            color: body!['color'] as string,
+            sortOrder: methods.length,
+            chargeNextMonth: (body!['chargeNextMonth'] as boolean | undefined) ?? false,
+          };
           methods = [...methods, created];
           return json(created, 201);
         }
@@ -204,7 +211,10 @@ function mockFetch() {
           if (!methodBody(body)) return bad();
           const name = (body!['name'] as string).trim();
           if (methods.some((m) => m.name === name && m.id !== id)) return json({ error: 'duplicate_name' }, 409);
-          methods = methods.map((m) => (m.id === id ? { ...m, name, color: body!['color'] as string } : m));
+          methods = methods.map((m) => (m.id === id
+              ? { ...m, name, color: body!['color'] as string, chargeNextMonth: (body!['chargeNextMonth'] as boolean | undefined) ?? m.chargeNextMonth }
+              : m),
+          );
           return json(methods.find((m) => m.id === id));
         }
         if (method === 'DELETE') {
@@ -273,7 +283,7 @@ beforeEach(() => {
     { id: 't-sub', name: 'Assinatura', color: '#D9730D', sortOrder: 0, system: 'SUBSCRIPTION' },
     { id: 't-stream', name: 'Streaming', color: '#0B6E99', sortOrder: 1, system: null },
   ];
-  methods = [{ id: 'm-pix', name: 'Pix', color: '#0B6E99', sortOrder: 0 }];
+  methods = [{ id: 'm-pix', name: 'Pix', color: '#0B6E99', sortOrder: 0, chargeNextMonth: false }];
   calls = [];
   online = true;
   nextPlan = null;
@@ -455,6 +465,27 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Editar Pix' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Excluir Pix' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Sair' })).toBeDisabled();
+  });
+
+  test('Métodos: marcar "Cobrar Pix no mês seguinte" envia PATCH com chargeNextMonth true e fica marcado', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Pix');
+    const box = screen.getByRole('checkbox', { name: 'Cobrar Pix no mês seguinte' });
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Cobrar Pix no mês seguinte' })).toBeChecked());
+    expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({
+      path: '/api/payment-methods/m-pix',
+      body: { name: 'Pix', color: '#0B6E99', chargeNextMonth: true },
+    });
+  });
+
+  test('Métodos: opção desabilitada offline', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Pix');
+    online = false;
+    window.dispatchEvent(new Event('offline'));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Cobrar Pix no mês seguinte' })).toBeDisabled());
   });
 
   test('Sair encerra a sessão e leva para /login', async () => {

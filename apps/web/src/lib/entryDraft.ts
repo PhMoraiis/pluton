@@ -1,4 +1,5 @@
 import {
+  addMonthsClamped,
   formatBRL,
   parseBRL,
   parseInstallmentName,
@@ -18,6 +19,10 @@ export interface EntryDraft {
   pixKey: string;
   monthly: boolean;
   tagIds: string[];
+  /** Seletor "Cobrar": true = "Próximo mês" (só na criação). */
+  nextMonth: boolean;
+  /** Data de antes do avanço, para voltar exatamente a ela; null se a data foi digitada. */
+  shiftedFrom: IsoDate | null;
 }
 
 /** Limites da API (`nameSchema` / `pixKeySchema` em apps/api/src/routes/entries.ts). */
@@ -82,6 +87,24 @@ export function withMethod(draft: EntryDraft, methodId: string, methods: Map<str
   return { ...draft, methodId, pixKey: isPix(methods, methodId) ? draft.pixKey : '' };
 }
 
+/** Liga/desliga "Próximo mês": desloca a data visível em um mês; data inválida só troca o seletor. */
+export function setChargeNextMonth(draft: EntryDraft, next: boolean): EntryDraft {
+  if (draft.nextMonth === next) return draft;
+  if (!isValidDueDate(draft.dueDate)) return { ...draft, nextMonth: next };
+  if (next) return { ...draft, nextMonth: true, shiftedFrom: draft.dueDate, dueDate: addMonthsClamped(draft.dueDate, 1) };
+  return { ...draft, nextMonth: false, shiftedFrom: null, dueDate: draft.shiftedFrom ?? addMonthsClamped(draft.dueDate, -1) };
+}
+
+/** Data digitada vale como está: esquece o deslocamento guardado; o seletor não muda. */
+export function withDueDate(draft: EntryDraft, dueDate: string): EntryDraft {
+  return { ...draft, dueDate, shiftedFrom: null };
+}
+
+/** Troca de método na criação: aplica também o padrão "Cobrar" do método. */
+export function withCreateMethod(draft: EntryDraft, methodId: string, methods: Map<string, PaymentMethodDTO>): EntryDraft {
+  return setChargeNextMonth(withMethod(draft, methodId, methods), methods.get(methodId)?.chargeNextMonth ?? false);
+}
+
 /** Patch de troca de método: saindo de Pix com chave gravada, limpa a chave. */
 export function methodPatch(
   entry: EntryDTO,
@@ -97,7 +120,7 @@ export function copyablePixKey(entry: EntryDTO, methods: Map<string, PaymentMeth
 }
 
 export function emptyDraft(dueDate: IsoDate, methodId: string): EntryDraft {
-  return { name: '', amount: '', dueDate, methodId, pixKey: '', monthly: false, tagIds: [] };
+  return { name: '', amount: '', dueDate, methodId, pixKey: '', monthly: false, tagIds: [], nextMonth: false, shiftedFrom: null };
 }
 
 export function draftFromEntry(entry: EntryDTO, tags?: Map<string, unknown>): EntryDraft {
@@ -109,6 +132,8 @@ export function draftFromEntry(entry: EntryDTO, tags?: Map<string, unknown>): En
     pixKey: entry.pixKey ?? '',
     monthly: entry.seriesType === 'MONTHLY',
     tagIds: tags ? knownTagIds(entry.tagIds, tags) : entry.tagIds,
+    nextMonth: false,
+    shiftedFrom: null,
   };
 }
 

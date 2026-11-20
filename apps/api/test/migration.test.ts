@@ -91,3 +91,23 @@ test('salary_tags migration keeps existing data and seeds the Assinatura tag', a
   expect((await client!.query(`SELECT count(*)::int AS n FROM "EntryTag"`)).rows[0].n).toBe(0);
   expect((await client!.query(`SELECT count(*)::int AS n FROM "SeriesTag"`)).rows[0].n).toBe(0);
 });
+
+test('charge_next_month migration turns on only "Cartão de crédito"', async () => {
+  await client!.query(
+    `INSERT INTO "PaymentMethod" ("id","userId","name","color","sortOrder") VALUES
+     ('pm2','u1','Cartão de crédito','#492F64',1),
+     ('pm3','u1','Cartão Nubank','#492F64',2)`,
+  );
+  const snapshot = `SELECT "id","amountCents","dueDate"::text AS "dueDate","paidOn"::text AS "paidOn","paymentMethodId" FROM "Entry" ORDER BY "id"`;
+  const entriesBefore = (await client!.query(snapshot)).rows;
+
+  await client!.query(migrationSql('charge_next_month'));
+
+  const rows = (await client!.query(`SELECT id, "chargeNextMonth" FROM "PaymentMethod" ORDER BY id`)).rows;
+  expect(rows).toEqual([
+    { id: 'pm1', chargeNextMonth: false },
+    { id: 'pm2', chargeNextMonth: true },
+    { id: 'pm3', chargeNextMonth: false },
+  ]);
+  expect((await client!.query(snapshot)).rows).toEqual(entriesBefore);
+});

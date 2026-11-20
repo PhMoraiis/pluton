@@ -100,7 +100,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-11-19T15:00:00Z'));
   salary = null;
   putError = null;
-  methods = [{ id: 'm-pix', name: 'Pix', color: '#0B6E99', sortOrder: 0 }];
+  methods = [{ id: 'm-pix', name: 'Pix', color: '#0B6E99', sortOrder: 0, chargeNextMonth: false }];
   calls = [];
   online = true;
   vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);

@@ -11,6 +11,7 @@ export interface PaymentMethodDTO {
   name: string;
   color: string;
   sortOrder: number;
+  chargeNextMonth: boolean;
 }
 
 export interface EntryDTO {

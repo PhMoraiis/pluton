@@ -6,10 +6,14 @@ import {
   maskAmount,
   MAX_NAME_LENGTH,
   MAX_PIX_KEY_LENGTH,
+  setChargeNextMonth,
   sortedMethods,
+  withCreateMethod,
+  withDueDate,
   withMethod,
   type EntryDraft,
 } from '../lib/entryDraft';
+import { ChargeMonthToggle } from './ChargeMonthToggle';
 import { Modal } from './Modal';
 import { TagPicker } from './TagPicker';
 
@@ -94,14 +98,34 @@ export function EntrySheet({
               onBlur={() => set('amount', maskAmount(draft.amount))}
             />
           </label>
-          <label className={labelCls}>
-            Vencimento
-            <input type="date" className={field} value={draft.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
-          </label>
+          <div className="flex flex-col">
+            <label className={labelCls}>
+              Vencimento
+              <input
+                type="date"
+                className={field}
+                value={draft.dueDate}
+                onChange={(e) => (mode === 'create' ? setDraft((d) => withDueDate(d, e.target.value)) : set('dueDate', e.target.value))}
+              />
+            </label>
+            {mode === 'create' && (
+              <ChargeMonthToggle
+                value={draft.nextMonth}
+                disabled={!canWrite}
+                onChange={(next) => setDraft((d) => setChargeNextMonth(d, next))}
+              />
+            )}
+          </div>
         </div>
         <label className={labelCls}>
           Método
-          <select className={field} value={draft.methodId} onChange={(e) => setDraft((d) => withMethod(d, e.target.value, byId))}>
+          <select
+            className={field}
+            value={draft.methodId}
+            onChange={(e) =>
+              setDraft((d) => (mode === 'create' ? withCreateMethod(d, e.target.value, byId) : withMethod(d, e.target.value, byId)))
+            }
+          >
             <option value="">Sem método</option>
             {list.map((m) => (
               <option key={m.id} value={m.id}>

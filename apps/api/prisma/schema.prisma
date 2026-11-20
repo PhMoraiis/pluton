@@ -103,14 +103,15 @@ enum TagSystem {
 }
 
 model PaymentMethod {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  color     String
-  sortOrder Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  entries   Entry[]
-  series    Series[]
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  color           String
+  sortOrder       Int
+  chargeNextMonth Boolean  @default(false)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries         Entry[]
+  series          Series[]
 
   @@unique([userId, name])
 }

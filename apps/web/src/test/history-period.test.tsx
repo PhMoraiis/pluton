@@ -20,7 +20,7 @@ import { PeriodPage } from '../pages/PeriodPage';
 
 // O Testing Library normaliza U+00A0 (saída de formatBRL) para espaço comum ao casar texto.
 const SP = ' ';
-const methods: PaymentMethodDTO[] = [{ id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 }];
+const methods: PaymentMethodDTO[] = [{ id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0, chargeNextMonth: false }];
 
 const tags: TagDTO[] = [{ id: 't-sub', name: 'Assinatura', color: '#D9730D', sortOrder: 0, system: 'SUBSCRIPTION' }];
 

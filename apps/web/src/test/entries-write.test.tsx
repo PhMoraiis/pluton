@@ -19,8 +19,8 @@ import { UndoToast } from '../components/UndoToast';
 import { EntriesPage } from '../pages/EntriesPage';
 
 const methods: PaymentMethodDTO[] = [
-  { id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0 },
-  { id: 'm-card', name: 'Cartão de crédito', color: '#e255a1', sortOrder: 1 },
+  { id: 'm-pix', name: 'Pix', color: '#2eaadc', sortOrder: 0, chargeNextMonth: false },
+  { id: 'm-card', name: 'Cartão de crédito', color: '#e255a1', sortOrder: 1, chargeNextMonth: true },
 ];
 
 const tagList: TagDTO[] = [
@@ -77,6 +77,8 @@ let payGate: Promise<void> | null;
 let online: boolean;
 /** Métodos devolvidos pela API; `null` = a consulta falha (lista ainda não carregada). */
 let methodList: PaymentMethodDTO[] | null;
+/** Segura a resposta de `/api/payment-methods` (métodos que chegam depois da linha aberta). */
+let methodsGate: Promise<void> | null;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -138,6 +140,7 @@ function mockFetch() {
         case '/api/tags':
           return json(tagList);
         case '/api/payment-methods':
+          if (methodsGate) await methodsGate;
           return methodList ? json(methodList) : json({ error: 'internal' }, 500);
         default:
           return new Response('not found', { status: 404 });
@@ -177,6 +180,7 @@ beforeEach(() => {
   payGate = null;
   online = true;
   methodList = methods;
+  methodsGate = null;
   vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);
   mockFetch();
   setViewport(true);
@@ -728,6 +732,155 @@ describe('EntriesPage (escrita) — segurança dos dados', () => {
     fireEvent.change(amount, { target: { value: '42,9' } });
     fireEvent.blur(amount);
     expect((amount as HTMLInputElement).value.replace(/\u00A0/g, ' ')).toBe('R$ 42,90');
+  });
+});
+
+describe('EntriesPage (escrita) — cobrar este mês ou no próximo', () => {
+  const cobrar = () => screen.getByRole('radiogroup', { name: 'Cobrar' });
+  const thisMonth = () => within(cobrar()).getByRole('radio', { name: 'Este mês' });
+  const nextMonth = () => within(cobrar()).getByRole('radio', { name: 'Próximo mês' });
+
+  async function openRow() {
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Método' })).toHaveValue('m-pix'));
+  }
+
+  function fillAndSave() {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nome' }), { target: { value: 'Tênis 1/2' } });
+    const amount = screen.getByRole('textbox', { name: 'Valor' });
+    fireEvent.change(amount, { target: { value: '100,00' } });
+    fireEvent.keyDown(amount, { key: 'Enter' });
+  }
+
+  test('nova linha: Cartão de crédito avança a data e o POST leva a data visível', async () => {
+    renderPage();
+    await openRow();
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2026-12-05');
+    expect(thisMonth()).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Método' }), { target: { value: 'm-card' } });
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-01-05');
+    expect(nextMonth()).toHaveAttribute('aria-checked', 'true');
+
+    fillAndSave();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ dueDate: '2027-01-05', paymentMethodId: 'm-card' });
+  });
+
+  test('nova linha: "Este mês" com Cartão volta a data', async () => {
+    renderPage();
+    await openRow();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Método' }), { target: { value: 'm-card' } });
+    fireEvent.click(thisMonth());
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2026-12-05');
+    expect(thisMonth()).toHaveAttribute('aria-checked', 'true');
+
+    fillAndSave();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ dueDate: '2026-12-05' });
+  });
+
+  test('nova linha: data editada à mão não é deslocada de novo', async () => {
+    renderPage();
+    await openRow();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Método' }), { target: { value: 'm-card' } });
+    fireEvent.change(screen.getByLabelText('Vencimento'), { target: { value: '2027-01-20' } });
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-01-20');
+    expect(nextMonth()).toHaveAttribute('aria-checked', 'true');
+
+    fillAndSave();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ dueDate: '2027-01-20' });
+  });
+
+  test('método padrão que cobra no mês seguinte já abre com a data avançada', async () => {
+    methodList = [
+      { ...methods[1]!, sortOrder: 0 },
+      { ...methods[0]!, sortOrder: 1 },
+    ];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    await waitFor(() => expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-01-05'));
+    expect(nextMonth()).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.change(screen.getByLabelText('Vencimento'), { target: { value: '2027-02-10' } });
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-02-10');
+
+    fillAndSave();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ dueDate: '2027-02-10' });
+  });
+
+  test('métodos que chegam depois da linha aberta aplicam o padrão sem deslocar a data editada', async () => {
+    let release!: () => void;
+    methodsGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    methodList = [
+      { ...methods[1]!, sortOrder: 0 },
+      { ...methods[0]!, sortOrder: 1 },
+    ];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2026-12-05');
+    expect(thisMonth()).toHaveAttribute('aria-checked', 'true');
+
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-01-05'));
+    expect(nextMonth()).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.change(screen.getByLabelText('Vencimento'), { target: { value: '2027-02-10' } });
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-02-10');
+
+    fillAndSave();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ dueDate: '2027-02-10', paymentMethodId: 'm-card' });
+  });
+
+  test('celular: formulário de criação tem o seletor e envia a data avançada', async () => {
+    setViewport(false);
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+    // O formulário guarda a data do momento em que abre: espera o mês padrão carregar.
+    await screen.findByText('Aluguel');
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Novo lançamento' });
+    expect(within(sheet).getByRole('radio', { name: 'Este mês' })).toHaveAttribute('aria-checked', 'true');
+    await within(sheet).findByRole('option', { name: 'Cartão de crédito' });
+
+    fireEvent.change(within(sheet).getByRole('combobox', { name: 'Método' }), { target: { value: 'm-card' } });
+    expect(within(sheet).getByLabelText('Vencimento')).toHaveValue('2027-01-05');
+    expect(within(sheet).getByRole('radio', { name: 'Próximo mês' })).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Tênis 1/2' } });
+    fireEvent.change(within(sheet).getByRole('textbox', { name: 'Valor' }), { target: { value: '100,00' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ dueDate: '2027-01-05' });
+  });
+
+  test('formulário de edição não mostra o seletor Cobrar', async () => {
+    setViewport(false);
+    entries = [entry({ id: 'e1', displayName: 'Aluguel', amountCents: 150000, dueDate: '2026-12-05' })];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar: Aluguel' }));
+    await screen.findByRole('dialog', { name: 'Editar lançamento' });
+    expect(screen.queryByRole('radiogroup', { name: 'Cobrar' })).toBeNull();
+  });
+
+  test('ficar offline com a nova linha aberta desabilita o seletor', async () => {
+    renderPage();
+    await openRow();
+    online = false;
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    await waitFor(() => expect(thisMonth()).toBeDisabled());
+    expect(nextMonth()).toBeDisabled();
+    fireEvent.click(nextMonth());
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2026-12-05');
   });
 });
 
