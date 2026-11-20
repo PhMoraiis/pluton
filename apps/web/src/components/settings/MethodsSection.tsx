@@ -82,7 +82,7 @@ export function MethodsSection() {
               <input
                 type="checkbox"
                 aria-label={`Cobrar ${m.name} no mês seguinte`}
-                checked={m.chargeNextMonth}
+                checked={m.chargeNextMonth ?? false}
                 disabled={!canWrite || charge.isPending}
                 onChange={(e) => charge.mutate({ m, chargeNextMonth: e.target.checked })}
               />

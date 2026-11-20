@@ -77,6 +77,8 @@ let payGate: Promise<void> | null;
 let online: boolean;
 /** Métodos devolvidos pela API; `null` = a consulta falha (lista ainda não carregada). */
 let methodList: PaymentMethodDTO[] | null;
+/** Segura a resposta de `/api/payment-methods` (métodos que chegam depois da linha aberta). */
+let methodsGate: Promise<void> | null;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -138,6 +140,7 @@ function mockFetch() {
         case '/api/tags':
           return json(tagList);
         case '/api/payment-methods':
+          if (methodsGate) await methodsGate;
           return methodList ? json(methodList) : json({ error: 'internal' }, 500);
         default:
           return new Response('not found', { status: 404 });
@@ -177,6 +180,7 @@ beforeEach(() => {
   payGate = null;
   online = true;
   methodList = methods;
+  methodsGate = null;
   vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);
   mockFetch();
   setViewport(true);
@@ -805,6 +809,34 @@ describe('EntriesPage (escrita) — cobrar este mês ou no próximo', () => {
     fillAndSave();
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]!.body).toMatchObject({ dueDate: '2027-02-10' });
+  });
+
+  test('métodos que chegam depois da linha aberta aplicam o padrão sem deslocar a data editada', async () => {
+    let release!: () => void;
+    methodsGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    methodList = [
+      { ...methods[1]!, sortOrder: 0 },
+      { ...methods[0]!, sortOrder: 1 },
+    ];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nova linha' }));
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2026-12-05');
+    expect(thisMonth()).toHaveAttribute('aria-checked', 'true');
+
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-01-05'));
+    expect(nextMonth()).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.change(screen.getByLabelText('Vencimento'), { target: { value: '2027-02-10' } });
+    expect(screen.getByLabelText('Vencimento')).toHaveValue('2027-02-10');
+
+    fillAndSave();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.body).toMatchObject({ dueDate: '2027-02-10', paymentMethodId: 'm-card' });
   });
 
   test('celular: formulário de criação tem o seletor e envia a data avançada', async () => {
