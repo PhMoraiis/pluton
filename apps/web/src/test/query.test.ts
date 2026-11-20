@@ -67,50 +67,64 @@ describe('offline = somente leitura (nada é enfileirado)', () => {
   });
 });
 
+/** Cache persistido "agora", com uma query de sucesso e nenhum observer. */
+function persistedClient(buster: string, queryKey: unknown[], data: unknown): PersistedClient {
+  const now = Date.now();
+  return {
+    buster,
+    timestamp: now,
+    clientState: {
+      mutations: [],
+      queries: [
+        {
+          queryKey,
+          queryHash: JSON.stringify(queryKey),
+          dehydratedAt: now,
+          state: {
+            data,
+            dataUpdateCount: 1,
+            dataUpdatedAt: now,
+            error: null,
+            errorUpdateCount: 0,
+            errorUpdatedAt: 0,
+            fetchFailureCount: 0,
+            fetchFailureReason: null,
+            fetchMeta: null,
+            isInvalidated: false,
+            status: 'success',
+            fetchStatus: 'idle',
+          },
+        },
+      ],
+    },
+  };
+}
+
+async function restoreFrom(persisted: PersistedClient): Promise<void> {
+  const memoryPersister: Persister = {
+    persistClient: () => {},
+    restoreClient: () => persisted,
+    removeClient: () => {},
+  };
+  await persistQueryClientRestore({ ...persistOptions, persister: memoryPersister, queryClient });
+  // gcTime acima de 2^31-1 ms estoura o setTimeout e o GC roda em ~1 ms.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
 describe('cache persistido (leitura offline)', () => {
   test('dados restaurados continuam no cache até as telas montarem', async () => {
-    // Persistido "agora", com uma query de sucesso e nenhum observer (o app ainda
-    // está checando a sessão quando a restauração termina).
-    const now = Date.now();
-    const persisted: PersistedClient = {
-      buster: persistOptions.buster ?? '',
-      timestamp: now,
-      clientState: {
-        mutations: [],
-        queries: [
-          {
-            queryKey: ['payment-methods'],
-            queryHash: '["payment-methods"]',
-            dehydratedAt: now,
-            state: {
-              data: [{ id: 'm1' }],
-              dataUpdateCount: 1,
-              dataUpdatedAt: now,
-              error: null,
-              errorUpdateCount: 0,
-              errorUpdatedAt: 0,
-              fetchFailureCount: 0,
-              fetchFailureReason: null,
-              fetchMeta: null,
-              isInvalidated: false,
-              status: 'success',
-              fetchStatus: 'idle',
-            },
-          },
-        ],
-      },
-    };
-    const memoryPersister: Persister = {
-      persistClient: () => {},
-      restoreClient: () => persisted,
-      removeClient: () => {},
-    };
-
-    await persistQueryClientRestore({ ...persistOptions, persister: memoryPersister, queryClient });
-    // gcTime acima de 2^31-1 ms estoura o setTimeout e o GC roda em ~1 ms.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // O app ainda está checando a sessão quando a restauração termina.
+    await restoreFrom(persistedClient(persistOptions.buster ?? '', ['payment-methods'], [{ id: 'm1' }]));
 
     expect(queryClient.getQueryData(['payment-methods'])).toEqual([{ id: 'm1' }]);
+  });
+
+  test('cache gravado antes das etiquetas (buster v1, lançamentos sem tagIds) é descartado', async () => {
+    // Restaurado, ele quebrava o Histórico: `entry.tagIds` undefined em TagChips.
+    const key = ['entries', { kind: 'EXPENSE', status: 'paid' }];
+    await restoreFrom(persistedClient('v1', key, [{ id: 'e1', name: 'Mercado', amountCents: 100 }]));
+
+    expect(queryClient.getQueryData(key)).toBeUndefined();
   });
 });
 
