@@ -467,6 +467,27 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Sair' })).toBeDisabled();
   });
 
+  test('Métodos: marcar "Cobrar Pix no mês seguinte" envia PATCH com chargeNextMonth true e fica marcado', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Pix');
+    const box = screen.getByRole('checkbox', { name: 'Cobrar Pix no mês seguinte' });
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Cobrar Pix no mês seguinte' })).toBeChecked());
+    expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({
+      path: '/api/payment-methods/m-pix',
+      body: { name: 'Pix', color: '#0B6E99', chargeNextMonth: true },
+    });
+  });
+
+  test('Métodos: opção desabilitada offline', async () => {
+    renderWith(<SettingsPage />);
+    await screen.findByText('Pix');
+    online = false;
+    window.dispatchEvent(new Event('offline'));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Cobrar Pix no mês seguinte' })).toBeDisabled());
+  });
+
   test('Sair encerra a sessão e leva para /login', async () => {
     renderWith(<SettingsPage />);
     await screen.findByText('Pix');

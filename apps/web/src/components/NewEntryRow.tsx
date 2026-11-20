@@ -8,12 +8,15 @@ import {
   maskAmount,
   MAX_NAME_LENGTH,
   MAX_PIX_KEY_LENGTH,
+  setChargeNextMonth,
   sortedMethods,
-  withMethod,
+  withCreateMethod,
+  withDueDate,
   type EntryDraft,
 } from '../lib/entryDraft';
 import { useCreateEntry } from '../lib/entryMutations';
 import { friendlyError } from '../lib/errors';
+import { ChargeMonthToggle } from './ChargeMonthToggle';
 import { EntrySheet } from './EntrySheet';
 
 interface Props {
@@ -46,12 +49,19 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
   const nameRef = useRef<HTMLInputElement>(null);
 
   // Métodos podem chegar depois de abrir a linha: vazio = primeiro método (Pix).
-  const current: EntryDraft = methodChosen ? draft : { ...draft, methodId: draft.methodId || defaultMethod };
+  // Enquanto nada foi escolhido, o padrão do método (incluindo "Cobrar") é aplicado por cima.
+  const current: EntryDraft = methodChosen ? draft : withCreateMethod(draft, draft.methodId || defaultMethod, byId);
   const hint = installmentHint(current.name);
   const set = <K extends keyof EntryDraft>(key: K, value: EntryDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
+  /** Data, seletor e método congelam o estado visível: o padrão não é reaplicado por cima. */
+  function edit(fn: (d: EntryDraft) => EntryDraft) {
+    setDraft(fn(current));
+    setMethodChosen(true);
+  }
+
   function openRow() {
-    setDraft(emptyDraft(defaultDate, defaultMethod));
+    setDraft(withCreateMethod(emptyDraft(defaultDate, ''), defaultMethod, byId));
     setMethodChosen(false);
     setError(null);
     setOpen(true);
@@ -125,7 +135,7 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
   function submitRow() {
     save(current, () => {
       // Nova linha vazia, pronta para o próximo lançamento.
-      setDraft(emptyDraft(defaultDate, defaultMethod));
+      setDraft(withCreateMethod(emptyDraft(defaultDate, ''), defaultMethod, byId));
       setMethodChosen(false);
       nameRef.current?.focus();
     });
@@ -154,7 +164,12 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
             className={cellInput}
             disabled={disabled}
             value={current.dueDate}
-            onChange={(e) => set('dueDate', e.target.value)}
+            onChange={(e) => edit((d) => withDueDate(d, e.target.value))}
+          />
+          <ChargeMonthToggle
+            value={current.nextMonth}
+            disabled={disabled}
+            onChange={(next) => edit((d) => setChargeNextMonth(d, next))}
           />
         </td>
         <td className="px-2 py-1.5">
@@ -190,10 +205,7 @@ export function NewEntryRow({ kind, defaultDate, methods, canWrite, variant, col
             className={cellInput}
             disabled={disabled}
             value={current.methodId}
-            onChange={(e) => {
-              setMethodChosen(true);
-              setDraft((d) => withMethod(d, e.target.value, byId));
-            }}
+            onChange={(e) => edit((d) => withCreateMethod(d, e.target.value, byId))}
           >
             <option value="">Sem método</option>
             {list.map((m) => (

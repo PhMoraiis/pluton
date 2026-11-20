@@ -43,6 +43,14 @@ export function MethodsSection() {
       await refresh();
     },
   });
+  const charge = useMutation({
+    mutationFn: ({ m, chargeNextMonth }: { m: PaymentMethodDTO; chargeNextMonth: boolean }) =>
+      apiFetch<PaymentMethodDTO>(`/api/payment-methods/${m.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: m.name, color: m.color, chargeNextMonth }),
+      }),
+    onSuccess: refresh,
+  });
   const remove = useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/payment-methods/${id}`, { method: 'DELETE' }),
     onSuccess: async () => {
@@ -59,12 +67,27 @@ export function MethodsSection() {
           Não foi possível carregar os métodos.
         </p>
       )}
+      {charge.isError && (
+        <p role="alert" className="text-sm text-red-400">
+          {friendlyError(charge.error)}
+        </p>
+      )}
       <ul className="flex flex-col gap-1.5">
         {(methods.data ?? []).map((m) => (
           <li key={m.id} className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
             <span className="min-w-0 flex-1">
               <MethodTag method={m} />
             </span>
+            <label className="flex items-center gap-1.5 text-xs text-muted">
+              <input
+                type="checkbox"
+                aria-label={`Cobrar ${m.name} no mês seguinte`}
+                checked={m.chargeNextMonth}
+                disabled={!canWrite || charge.isPending}
+                onChange={(e) => charge.mutate({ m, chargeNextMonth: e.target.checked })}
+              />
+              Cobrar no mês seguinte
+            </label>
             <button
               type="button"
               className={btn}
